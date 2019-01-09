@@ -1,0 +1,9 @@
+#ifndef DEMO_VERSION_
+#define DEMO_VERSION_
+
+#define DEMO_MAJOR_VERSION (0)
+#define DEMO_MINOR_VERSION (1)
+#define DEMO_PATCH_VERSION (0)
+#define DEMO_VERSION "0.1.0"
+
+#endif  // DEMO_VERSION_
