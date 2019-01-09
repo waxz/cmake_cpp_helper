@@ -9,8 +9,10 @@ set(PROJECT_NAME @PROJECT_NAME@)
 # Import the exported targets
 # Set the expected library variable
 get_filename_component(SELF_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
-message(STATUS "***************** SELF_DIR: " ${SELF_DIR})
-foreach(lib  IN LISTS ${@PROJECT_NAME@_LIBS})
+# message(STATUS "***************** SELF_DIR: " ${SELF_DIR})
+set(LIBS @PROJECT_LIBS@)
+# message("${PROJECT_NAME}_LIBS" ${LIBS})
+foreach(lib  IN LISTS LIBS)
     include("${SELF_DIR}/${lib}Targets.cmake")
     list(APPEND @PROJECT_NAME@_LIBRARIES ${lib})
 endforeach()
