@@ -36,12 +36,18 @@ mc_install_executable(demo_test)
 ## qt
 #set(QMLQRCPATH resources/qml.qrc)
 include(FindQt5Qml)
+
+add_library(backend resources/backend.cpp)
+target_include_directories(backend PUBLIC resources)
+mc_link_qt5(backend)
+
 set(SOURCE
         src/qtdemo.cpp
         )
 mc_add_qml_qrc(helloworld resources/qml.qrc)
 
 mc_add_qml_executable(helloworld ${SOURCE})
+target_link_libraries(helloworld backend)
 # Use the Qml/Quick modules from Qt 5.
 
 

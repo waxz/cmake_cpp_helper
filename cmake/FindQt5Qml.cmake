@@ -5,7 +5,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 # Find the Qt libraries for Qt Quick/QML
-find_package(Qt5 REQUIRED Qml Quick Gui)
+find_package(Qt5 REQUIRED Core Qml Quick Gui)
 add_definitions(${Qt5Widgets_DEFINITIONS} ${QtQml_DEFINITIONS} ${${Qt5Quick_DEFINITIONS}})
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${Qt5Widgets_EXECUTABLE_COMPILE_FLAGS}")
 function(mc_add_qml_qrc arg)
@@ -17,7 +17,13 @@ function(mc_add_qml_qrc arg)
 endfunction()
 
 #qt5_add_resources(QMLQRC ${QMLQRCPATH})
+function(mc_link_qt5 arg)
+    message("======= mc_link_qt5 ======= ")
+    message("-- lib name: " ${ARGV0})  # 打印第一个参数里的所有内容
+    target_link_libraries(${ARGV0} Qt5::Core Qt5::Qml Qt5::Quick)
 
+
+endfunction()
 function(mc_add_qml_executable arg)
     if (NOT ${ARGV0}_QMLQRC)
         message(FATAL_ERROR "${ARGV0}_QMLQRC NOT SET, You can not do this at all, CMake will exit.")
@@ -37,7 +43,7 @@ function(mc_add_qml_executable arg)
             $<INSTALL_INTERFACE:${INSTALL_LIB_DIR}> # for config_impl.hpp in install mode
             )
 
-    target_link_libraries(${ARGV0} Qt5::Qml Qt5::Quick)
+    target_link_libraries(${ARGV0} Qt5::Core Qt5::Qml Qt5::Quick)
 
 
 endfunction()

@@ -1,30 +1,57 @@
 import QtQuick 2.3
-import QtQuick.Window 2.2
+import QtQuick.Controls 1.0
+import io.backend 1.0
 
-// main window
-
-Window {
-
+ApplicationWindow {
+    id: root
+    width: 300
+    height: 480
     visible: true
-    MouseArea {
-        anchors.fill: parent
-        onClicked: {
-            	Qt.quit();
-        }
+    Rectangle
+    {
+        id: mrect
+        objectName: "mRectangle"
+        x: 10
+        y: 20
+        height: 10
+        width: 10
     }
-    Text {
-        id: keyView;
-        font.bold: true;
-        font.pixelSize: 24;
-        text: qsTr("text");
-        anchors.centerIn: parent;
+    BackEnd {
+        id: backend
+    }
+    MouseArea {
+        id: loginMouseArea
+        hoverEnabled: true
+        anchors.fill: parent
+
+        onClicked:{
+            console.log("Login pressed" ,backend.userName);
+            textInput.text = 666;
+            }
     }
 
-	Image {
-        source: "pics/cpp.png"
+    Rectangle
+    {
+
+        anchors.centerIn: parent
+
+
+        TextField {
+            objectName: "textInput"
+            id: textInput
+            text: backend.userName
+            placeholderText: qsTr("User name")
+            anchors.centerIn: parent
+
+            onTextChanged: {
+            backend.userName = text;
+            //backend.setUserName(8888);
+
+            }
+        }
+
     }
 
 
 
 }
-
