@@ -3,10 +3,26 @@ cmake helper for build muti library project
 how to use:
 1. edit CMakeLists.txt
 ```
+# add library
 set(LIB_SRC src/demolib2.cpp)
 mc_add_library(demolib2 ${LIB_SRC})
 target_link_libraries(demolib2 demolib1)
 mc_install_library(demolib2)
+
+# add excuteble
+set(SRC src/demotest.cpp)
+mc_add_executable(demo_test ${SRC})
+target_link_libraries(demo_test demolib2)
+mc_install_executable(demo_test)
+
+# add qt5 qml
+include(FindQt5Qml)
+set(SOURCE
+        src/main.cpp
+        )
+mc_add_qml_qrc(helloworld resources/qml.qrc)
+
+mc_add_qml_executable(helloworld ${SOURCE})
 ```
 2. compile
 ```

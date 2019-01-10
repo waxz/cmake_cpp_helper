@@ -33,6 +33,18 @@ target_link_libraries(demo_test demolib2)
 mc_install_executable(demo_test)
 
 
+## qt
+#set(QMLQRCPATH resources/qml.qrc)
+include(FindQt5Qml)
+set(SOURCE
+        src/qtdemo.cpp
+        )
+mc_add_qml_qrc(helloworld resources/qml.qrc)
+
+mc_add_qml_executable(helloworld ${SOURCE})
+# Use the Qml/Quick modules from Qt 5.
+
+
 # Install targets
 include(InstallConfig)
 # pack to deb
