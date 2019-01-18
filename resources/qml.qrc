@@ -1,7 +1,9 @@
 <RCC>
     <qresource prefix="/">
         <file>main.qml</file>
+        <file>loginUi.qml</file>
         <file>MainForm.ui.qml</file>
+        <file>DataGrid.qml</file>
     </qresource>
     <qresource prefix="/images">
         <file>background.jpg</file>

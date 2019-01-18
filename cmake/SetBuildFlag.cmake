@@ -27,7 +27,7 @@ if (CMAKE_BUILD_TYPE MATCHES Debug)
         set(CMAKE_CXX_FLAGS_DEBUG "-g3")
         set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -g  -fprofile-arcs -ftest-coverage")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -g  -fprofile-arcs -ftest-coverage -Wno-dev ")
     endif ()
 endif ()
 set(CMAKE_CXX_FLAGS_DEBUG "-O0")             # 调试包不优化

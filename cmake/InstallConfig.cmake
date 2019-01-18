@@ -1,6 +1,6 @@
 # Install headers
 # Create 'version.h'
-configure_file(${CMAKE_MODULE_PATH}/version.h.in
+configure_file(${MCMAKE_MODULE_PATH}/version.h.in
         "${HEADER_PATH}/version.h" @ONLY)
 # version.h + library header
 
@@ -11,11 +11,11 @@ install(DIRECTORY ${HEADER_PATH}/
         )
 
 # Create the <package>Config.cmake.in
-configure_file(${CMAKE_SOURCE_DIR}/cmake/Config.cmake.in
+configure_file(${MCMAKE_MODULE_PATH}/Config.cmake.in
         "${PROJECT_CMAKE_FILES}/${PROJECT_NAME}Config.cmake" @ONLY)
 
 # Create the <package>ConfigVersion.cmake.in
-configure_file(${CMAKE_SOURCE_DIR}/cmake/ConfigVersion.cmake.in
+configure_file(${MCMAKE_MODULE_PATH}/ConfigVersion.cmake.in
         "${PROJECT_CMAKE_FILES}/${PROJECT_NAME}ConfigVersion.cmake" @ONLY)
 
 # Install <package>Config.cmake and <package>ConfigVersion.cmake files
@@ -25,7 +25,7 @@ install(FILES
         DESTINATION "${INSTALL_CMAKE_DIR}" COMPONENT dev)
 
 # Uninstall targets
-configure_file("${CMAKE_SOURCE_DIR}/cmake/Uninstall.cmake.in"
+configure_file("${MCMAKE_MODULE_PATH}/Uninstall.cmake.in"
         "${PROJECT_CMAKE_FILES}/Uninstall.cmake"
         IMMEDIATE @ONLY)
 add_custom_target(uninstall

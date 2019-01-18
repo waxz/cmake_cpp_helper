@@ -29,6 +29,9 @@ if (Boost_FOUND)
     #    target_link_libraries(${PROJECT_NAME} ${Boost_LIBRARIES})
 endif ()
 
+# lib for #include <boost/multiprecision/gmp.hpp>  // Defines the wrappers around the GMP library's types
+
+set(MultiPrecisionLib gmp)
 
 # pthread
 # https://stackoverflow.com/questions/5395309/how-do-i-force-cmake-to-include-pthread-option-during-compilation

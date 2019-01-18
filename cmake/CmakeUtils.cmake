@@ -5,6 +5,20 @@ function(mc_add_lib arg)
 
 endfunction()
 
+function(mc_include_dir arg)
+    message("======= mc_include_dir ======= ")
+    #    message("===INSTALL_CMAKE_DIR== " ${INSTALL_CMAKE_DIR})
+    message("-- LIB_NAME: " ${ARGV0})  # 打印第一个参数里的所有内容
+    message("-- LIB_SRC: " ${ARGN})  # 打印第一个参数里的所有内容
+    target_include_directories(${ARGV0} PUBLIC
+            $<BUILD_INTERFACE:${HEADER_PATH}/${ARGN}> # for headers when building
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/${ARGN}> # for config_impl.hpp when building
+            $<INSTALL_INTERFACE:${INSTALL_INCLUDE_DIR}/${PROJECT_NAME}> # for client in install mode
+            $<INSTALL_INTERFACE:${INSTALL_LIB_DIR}> # for config_impl.hpp in install mode
+            )
+
+endfunction()
+
 function(mc_add_library arg)
     message("======= mc_add_library ======= ")
     #    message("===INSTALL_CMAKE_DIR== " ${INSTALL_CMAKE_DIR})
@@ -65,7 +79,7 @@ function(mc_install_executable arg)
     install(TARGETS ${EXE_NAME}
             # In order to export target, uncomment next line
             EXPORT ${EXE_NAME}Export
-            RUNTIME DESTINATION "${INSTALL_LIB_DIR}" COMPONENT bin
+            RUNTIME DESTINATION "${INSTALL_LIB_DIR}/${PROJECT_NAME}" COMPONENT bin
             LIBRARY DESTINATION "${INSTALL_LIB_DIR}" COMPONENT shlib
             ARCHIVE DESTINATION "${INSTALL_LIB_DIR}" COMPONENT stlib
             )

@@ -1,14 +1,18 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.0)
 project(demo)
 
 #==== load cmake
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
-
+set(MCMAKE_MODULE_PATH ${CMAKE_MODULE_PATH})
 # Set variables
 include(SetEnv)
 include(SetBuildFlag)
 include(FindPackageHelper)
 include(CmakeUtils)
+
+
+find_package(HMM 0.0.0 REQUIRED)
+include_directories(${HMM_INCLUDE_DIRS})
 
 
 # 1 set Header path
@@ -37,18 +41,36 @@ mc_install_executable(demo_test)
 #set(QMLQRCPATH resources/qml.qrc)
 include(FindQt5Qml)
 
-add_library(backend resources/backend.cpp)
-target_include_directories(backend PUBLIC resources)
+add_library(backend resources/backend.cpp
+        include/cpp_utils/qt_util.cpp
+        include/cpp_utils/ros_util_impl.cpp
+        include/cpp_utils/eigen_util_impl.cpp)
+target_include_directories(backend PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/resources> # for headers when building
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/resources> # for config_impl.hpp when building
+        $<INSTALL_INTERFACE:${INSTALL_INCLUDE_DIR}/${PROJECT_NAME}> # for client in install mode
+        $<INSTALL_INTERFACE:${INSTALL_LIB_DIR}> # for config_impl.hpp in install mode
+        )
+#target_include_directories(backend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 mc_link_qt5(backend)
+mc_install_library(backend)
+
 
 set(SOURCE
         src/qtdemo.cpp
         )
 mc_add_qml_qrc(helloworld resources/qml.qrc)
 
+
+include(FindRosHelper)
+
+
 mc_add_qml_executable(helloworld ${SOURCE})
 target_link_libraries(helloworld backend)
 # Use the Qml/Quick modules from Qt 5.
+mc_install_executable(helloworld)
+target_link_libraries(helloworld ${HMM_LIBRARIES} ${MultiPrecisionLib} ${ROS_LIBRARIES} ${CV_LIBS})
 
 
 # Install targets
