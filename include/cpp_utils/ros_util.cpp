@@ -187,15 +187,19 @@ namespace ros_util {
     LaserScan &LaserScan::operator=(const sensor_msgs::LaserScan &a) {
 
         copy(a);
+        return *this;
 
     }
 
     LaserScan &LaserScan::operator=(const LaserScan &a) {
         copy(a);
+        return *this;
+
     }
 
     LaserScan &LaserScan::operator=(LaserScan &&a) {
         copy(a);
+        return *this;
 
     }
 
@@ -227,20 +231,51 @@ namespace ros_util {
     void LaserScan::getXsYs(ValarrayF &xs, ValarrayF &ys) {
 
         cache();
-        getRangesVal();
         xs = ranges_val * cache_cos;
         ys = ranges_val * cache_sin;
     }
 
-    const LaserScan::ValarrayF &LaserScan::getRangesVal() {
+    LaserScan::ValarrayF &LaserScan::getRangesVal() {
         ranges_val = std::valarray<float>(&(ranges[0]), ranges.size());
 
         return ranges_val;
     }
 
-    const LaserScan::ValarrayF &LaserScan::getIntensitiesVal() {
+    LaserScan::ValarrayF &LaserScan::RangesVal() {
+
+        return ranges_val;
+    }
+
+    LaserScan::ValarrayF &LaserScan::getIntensitiesVal() {
         intensities_val = std::valarray<float>(&(intensities[0]), intensities.size());
 
         return intensities_val;
+    }
+
+
+
+    //
+
+    GridMap::GridMap() {
+
+    }
+
+    GridMap::GridMap(const nav_msgs::OccupancyGrid &a) {
+        data = a.data;
+        height = a.info.height;
+        width = a.info.width;
+        resolution = a.info.resolution;
+        origintransformation = eigen_util::TransformationMatrix2d(a.info.origin.position.x,
+                                                                  a.info.origin.position.y,
+                                                                  tf::getYaw(a.info.origin.orientation));
+    }
+
+    GridMap::GridMap(const GridMap &a) {
+        data = a.data;
+        height = a.height;
+        width = a.width;
+        resolution = a.resolution;
+        origintransformation = a.origintransformation;
+
     }
 }

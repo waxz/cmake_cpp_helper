@@ -56,16 +56,21 @@ namespace eigen_util {
     }
 
 
+    TransformationMatrix2d::TransformationMatrix2d() {
+        trans_3d = getTransform2d(0, 0, 0);
+    }
+
     TransformationMatrix2d::TransformationMatrix2d(double x, double y, double yaw) {
         trans_3d = getTransform2d(x, y, yaw);
     }
 
-    TransformationMatrix2d &TransformationMatrix2d::operator=(const Eigen::Matrix3d &matrix) {
+
+    TransformationMatrix2d &TransformationMatrix2d::operator=(const Eigen::MatrixXd &matrix) {
         trans_3d = matrix;
         return *this;
     }
 
-    TransformationMatrix2d::TransformationMatrix2d(const Eigen::Matrix3d &matrix) {
+    TransformationMatrix2d::TransformationMatrix2d(const Eigen::MatrixXd &matrix) {
         trans_3d = matrix;
     }
 
@@ -99,7 +104,7 @@ namespace eigen_util {
     }
 
 
-    Eigen::Matrix3d &TransformationMatrix2d::matrix() {
+    Eigen::MatrixXd &TransformationMatrix2d::matrix() {
 
         return trans_3d;
 

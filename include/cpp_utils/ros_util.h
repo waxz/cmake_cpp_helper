@@ -13,7 +13,7 @@
 #include <tf/transform_broadcaster.h> // tf broadcast
 
 #include <sensor_msgs/LaserScan.h>
-
+#include <nav_msgs/OccupancyGrid.h>
 #include <thread>                   // thread
 #include <memory>                   // shared_ptr
 #include <functional>               // bind
@@ -21,12 +21,13 @@
 #include <condition_variable>       // condition_variable_any
 #include <chrono>                   // time and sleep
 #include <map>                      // map
-
-
+#include <uchar.h>
+#include <stdint.h>
 #include <vector>
 #include <valarray>
 #include "signal_util.h"            // msg queue
-#include "thread_util.h"            // thread
+#include "thread_util.h"  // thread
+#include "eigen_util.h"
 
 namespace ros_util {
 
@@ -188,12 +189,16 @@ namespace ros_util {
             range_min = a.range_min;
             range_max = a.range_max;
             angle_increment = a.angle_increment;
+            getRangesVal();
+
 //            frame_id = a.header.frame_id;
 //            stamp_nsec = a.header.stamp.toNSec();
         }
 
 
     public:
+        LaserScan() {};     // copy constructor
+
         LaserScan(const LaserScan &a);     // copy constructor
         LaserScan &operator=(const LaserScan &a);     // copy assignment
 
@@ -205,11 +210,13 @@ namespace ros_util {
 
         void cache();
 
-        const ValarrayF &getRangesVal();
+        ValarrayF &getRangesVal();
+
+        ValarrayF &RangesVal();
 
         void getXsYs(ValarrayF &xs, ValarrayF &ys);
 
-        const ValarrayF &getIntensitiesVal();
+        ValarrayF &getIntensitiesVal();
 
 #if 0
         // delete function
@@ -221,6 +228,37 @@ namespace ros_util {
     };
 
 
+    class GridMap {
+    public:
+        typedef unsigned char uchar;
+//        enum GridType{
+//            UCHAR = 0,
+//            FLOAT
+//        };
+    private:
+        std::vector<signed char> data;
+        size_t height;
+        size_t width;
+        double resolution;
+
+        eigen_util::TransformationMatrix2d origintransformation;
+
+
+        uint8_t rr;
+
+    public:
+        GridMap();
+
+        GridMap(const nav_msgs::OccupancyGrid &a);
+
+        GridMap(const GridMap &a);
+
+        GridMap &operator()(const nav_msgs::OccupancyGrid &a);
+
+        GridMap &operator()(const GridMap &a);
+
+
+    };
 }
 
 

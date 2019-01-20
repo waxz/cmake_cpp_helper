@@ -19,24 +19,25 @@ namespace eigen_util {
 
     class TransformationMatrix2d {
     private:
-        Eigen::Matrix3d trans_3d;
+        Eigen::MatrixXd trans_3d;
         Eigen::Matrix4d trans_4d;
 
     public:
+        TransformationMatrix2d();
 
         TransformationMatrix2d(double x, double y, double yaw);
 
-        TransformationMatrix2d &operator=(const Eigen::Matrix3d &matrix);
+        TransformationMatrix2d &operator=(const Eigen::MatrixXd &matrix);
 
         TransformationMatrix2d &operator=(const TransformationMatrix2d &matrix);
 
-        explicit TransformationMatrix2d(const Eigen::Matrix3d &matrix);
+        explicit TransformationMatrix2d(const Eigen::MatrixXd &matrix);
 
         Eigen::Vector2d operator*(const Eigen::Vector2d &x);
 
         Eigen::MatrixXd operator*(const Eigen::MatrixXd &x);
 
-        Eigen::Matrix3d &matrix();
+        Eigen::MatrixXd &matrix();
 
         TransformationMatrix2d operator*(TransformationMatrix2d rv);
 
