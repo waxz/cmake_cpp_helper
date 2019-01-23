@@ -26,9 +26,317 @@ T clip(const T &n, const T &lower, const T &upper) {
     return std::max(lower, std::min(n, upper));
 }
 
+
+/*
+ * ===============
+ *     grid map
+ *
+ *     data:
+ *         store cv::Mat
+ *         origin transform
+ *
+ *     member function:
+ *         index
+ *         position transform
+ *
+ *
+ *
+ * */
+class GridMap {
+public:
+    enum OriginType {
+        LeftUp = 0,
+        LeftBottom
+    };
+
+private:
+    cv::Mat &m_grid;
+    bool isOriginInit;
+    int m_height;
+    int m_width;
+    double m_grid_resolution;
+
+    OriginType originType;
+    eigen_util::TransformationMatrix2d<float> LeftUpOrigin;
+    /*
+     * o----- y
+     * |
+     * |
+     * x
+     *
+     * */
+
+    /* cv::Mat index
+     * o----- x
+     * |
+     * |
+     * y
+     *
+     * */
+
+
+
+public:
+    GridMap(cv::Mat grid_, double grid_resolution_) :
+            m_grid(grid_),
+            isOriginInit(false),
+            m_height(m_grid.rows),
+            m_width(m_grid.cols), m_grid_resolution(grid_resolution_),
+            originType() {
+
+
+    }
+
+    cv::Mat &grid() {
+        return m_grid;
+    }
+
+    void setOrigin(double x_, double y_, double yaw_, OriginType type_) {
+
+        eigen_util::TransformationMatrix2d<float> origin(x_, y_, yaw_);
+        if (type_ == OriginType::LeftBottom) {
+            eigen_util::TransformationMatrix2d<float> bottomToUp(0.0, m_height / m_grid_resolution, -0.5 * M_PI);
+            LeftUpOrigin = origin * bottomToUp;
+
+        }
+
+        if (type_ == OriginType::LeftUp) {
+            LeftUpOrigin = origin;
+
+        }
+
+        isOriginInit = true;
+    }
+
+    template<typename T>
+    T &atPixel(int px, int py) {
+
+        if (px < 0 || px > m_height || py < 0 || py > m_width) {
+            throw std::out_of_range("px < 0 || px > m_height || py < 0 || py > m_width");
+        }
+        px = clip(px, 0, m_height);
+        py = clip(py, 0, m_width);
+        return m_grid.at<T>(px, py);
+    }
+
+    template<typename T>
+    T &atPosition(float x, float y) {
+        if (!isOriginInit) {
+            throw std::logic_error("Origin Not Set");
+        }
+        Eigen::Vector2f position;
+        position << x, y;
+        position = LeftUpOrigin.inverse() * position;
+
+        int px = static_cast<int>(position(0, 0));
+        int py = static_cast<int>(position(1, 0));
+
+        px = clip(px, 0, m_height);
+        py = clip(py, 0, m_width);
+
+
+        return m_grid.at<T>(px, py);
+    }
+
+    eigen_util::TransformationMatrix2d<float> &Origin() {
+        return LeftUpOrigin;
+    }
+
+
+};
+
+
+std::vector<std::vector<cv::Point>> createXsYsMatrix() {
+    GridMap *gm;
+    ros_util::LaserScan ls;
+
+
+    auto mm = ls.getXsYsMatrix();
+
+
+}
+
+class SimpleGrid {
+public:
+    enum OriginType {
+        LeftUp = 0,
+        LeftBottom
+    };
+
+
+private:
+//    ros_util::LaserScan& m_scan;
+    float m_range_max;
+    float m_grid_resolution;
+    size_t m_length;
+    size_t m_grid_height;
+    std::shared_ptr<cv::Mat> m_grid;
+    eigen_util::TransformationMatrix2d<float> LeftUpOrigin;
+    bool isOriginSet;
+
+
+public:
+
+    cv::Mat &getMat() {
+        return *m_grid;
+    }
+
+    SimpleGrid(float grid_resolution, int grid_height = 0) :
+            m_grid_resolution(grid_resolution),
+            isOriginSet(false),
+            m_grid_height(grid_height) {
+
+    }
+
+    void setOrigin(double x_, double y_, double yaw_, OriginType type_) {
+
+        eigen_util::TransformationMatrix2d<float> origin(x_, y_, yaw_);
+        if (type_ == OriginType::LeftBottom) {
+            eigen_util::TransformationMatrix2d<float> bottomToUp(0.0, 40.0, -0.5 * M_PI);
+            LeftUpOrigin = origin * bottomToUp;
+
+        }
+
+        if (type_ == OriginType::LeftUp) {
+            LeftUpOrigin = origin;
+
+        }
+
+        isOriginSet = true;
+    }
+
+    eigen_util::TransformationMatrix2d<float> &getOriginMatrix() {
+        return LeftUpOrigin;
+    }
+
+    Eigen::MatrixXf getFreePoints(ros_util::LaserScan &scan_) {
+        // reload
+        if (scan_.range_max != m_range_max) {
+            m_range_max = scan_.range_max;
+            m_length = static_cast<size_t>(round(m_range_max / m_grid_resolution));
+            auto m1 = cv::Mat(2 * m_length, 2 * m_length, CV_8SC1, cv::Scalar(0));
+            m_grid = std::make_shared<cv::Mat>(m1);
+            LeftUpOrigin = eigen_util::TransformationMatrix2d<float>(-m_range_max, -m_range_max, 0.0);
+            isOriginSet = true;
+        }
+
+        (*m_grid) = cv::Scalar(-100);
+
+        // get laser points in origin frame
+        auto laserPoints = scan_.getXsYsMatrix();
+
+        laserPoints = LeftUpOrigin.inverse() * laserPoints;
+
+        std::vector<std::vector<cv::Point>> contours;
+        contours.clear();
+        std::vector<cv::Point> contour;
+        contour.clear();
+
+        cv::Point p(m_length, m_length);
+        contour.push_back(p);
+        size_t px = 0, py = 0;
+
+
+        for (int i = 0; i < laserPoints.cols(); i++) {
+            px = static_cast<size_t>(laserPoints(1, i) / m_grid_resolution);
+            p.x = clip(px, 0 * m_length, 2 * m_length - 1);
+//
+//  p.y = static_cast<size_t>();
+
+            py = static_cast<size_t>(laserPoints(0, i) / m_grid_resolution);
+            p.y = clip(py, 0 * m_length, 2 * m_length - 1);
+            contour.push_back(p);
+            (*m_grid).at<signed char>(p) = 100;
+        }
+
+        contours.push_back(contour);
+
+        // draw cell color lable inside contour
+        cv::Scalar free_lable(1);
+
+        cv::drawContours(*m_grid, contours, 0, free_lable, CV_FILLED); // 0: index of contours,
+        cv::Rect rect = boundingRect(contours[0]);
+        int left = rect.x;
+        int top = rect.y;
+        int width = rect.width;
+        int height = rect.height;
+        int x_end = left + width;
+        int y_end = top + height;
+
+        // find cell inside contour
+
+        std::vector<float> freePoints;
+        freePoints.clear();
+        for (size_t x = left; x < x_end; x++) {
+            for (size_t y = top; y < y_end; y++) {
+
+                signed char &v = (*m_grid).at<signed char>(y, x);
+
+                if (1 == v) {
+                    v = 0;
+
+                    float xf = y * m_grid_resolution;
+                    float yf = x * m_grid_resolution;
+
+                    freePoints.push_back(xf);
+                    freePoints.push_back(yf);
+
+                }
+            }
+        }
+
+        auto freePointsMat = eigen_util::createMatrix<float, Eigen::ColMajor>(&(freePoints[0]), 2,
+                                                                              freePoints.size() / 2);
+
+
+        freePointsMat = LeftUpOrigin * freePointsMat;
+        return freePointsMat;
+
+    }
+
+
+};
+
+struct SimpleArray {
+    std::vector<double> data;
+    size_t m_rows;
+    size_t m_cols;
+
+    SimpleArray(int rows_, int cols_) : m_rows(rows_), m_cols(cols_) {
+
+        data.resize(rows_ * cols_);
+    }
+
+    double &operator()(int i, int j) {
+        return data[i * m_cols + j];
+    }
+
+    size_t rows() {
+        return m_rows;
+    }
+
+    size_t cols() {
+        return m_cols;
+    }
+
+};
+
+
 int main(int argc, char *argv[]) {
 
+#if 0
+    std::vector<double> x1{1,2,3,4};
+    std::vector<double> x2{1.1,2.1,3.1,4.1};
 
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> mm(2,4);
+    Eigen::Map<Eigen::MatrixXd> xm1(&(x1[0]), 1, 4);
+    Eigen::Map<Eigen::MatrixXd> xm2(&(x2[0]), 1, 4);
+    mm.row(0) << xm1;
+    mm.row(1) << xm2;
+
+    std::cout << "mm \n" << mm << std::endl;
+    return 0;
+#endif
 
 
 // ros
@@ -135,318 +443,181 @@ int main(int argc, char *argv[]) {
     // display laser scan data in global grid
     // 0 = free, 255 = occu, 128 = unobserve
 
-    float contour_offset = 0.1;
+    float contour_offset = 0.05;
     float grid_resolution = 0.05;
     int grid_width = global_x / grid_resolution;
     int grid_height = global_x / grid_resolution;
     cv::Mat global_grid(grid_height, grid_width, CV_8UC1, cv::Scalar(0));
 
-    cv::Mat predict_grid(grid_height, grid_width, CV_8UC1, cv::Scalar(0));
+    cv::Mat predict_grid(grid_height, grid_width, CV_8S, cv::Scalar(-1));
     cv::Mat prob_grid(grid_height, grid_width, CV_32F, cv::Scalar(0.5));
 
 
-    std::valarray<float> xs, ys;
-    std::valarray<float> cache_cos, cache_sin;
-    std::valarray<float> xs_offset, ys_offset;
-    // points to contours
-    std::vector<std::vector<cv::Point> > contours;
-    std::vector<cv::Point> contour;
-    std::vector<double> occuPoints;
 
     ros_util::LaserScan m_scan;
+    SimpleGrid m_laser_grid(0.04);
+    SimpleGrid m_map_grid(0.05, 40);
 
     nav_msgs::OccupancyGrid m_map;
     m_map.header.frame_id = "/map";
     ros::NodeHandle nh;
     ros::Publisher map_pub = nh.advertise<nav_msgs::OccupancyGrid>("/map", 1);
+    ros::Publisher scan_pub = nh.advertise<sensor_msgs::LaserScan>("/scan2", 1);
+    time_util::Timer t;
+    eigen_util::TransformationMatrix2d<float> transMat(0.0, 0.0, 0.0 * 3.14159 / 4);
 
+    Eigen::MatrixXf freePointsMat, occuPointsMat, occuPointsMatInMap, freePointsMatInMap;
+    Eigen::MatrixXf occupointsMatInGrid, freepointsMatInGrid;
+    Eigen::MatrixXi freepointsMatInGrid_index, occupointsMatInGrid_index;
+    Eigen::MatrixXf freepointsMatInGrid_index1, occupointsMatInGrid_index1;
+
+    eigen_util::TransformationMatrix2d<float> originTrans(-20.0, -20.0, 0.0);
+
+    m_map_grid.setOrigin(-20.0, -20.0, 0.0, SimpleGrid::OriginType::LeftBottom);
+
+    auto m_map_grid_origin = m_map_grid.getOriginMatrix();
+    double cnt = 0;
+
+    double time_all = 0.0;
     while (1) {
+        cnt++;
         node.getOneMsg("/scan", -1);
-        m_map.header.stamp = (*scan_ptr).header.stamp;
+        t.start();
 
+        m_map.header.stamp = ros::Time::now();
+//        (*scan_ptr).header.stamp = ros::Time::now();
+//        scan_pub.publish((*scan_ptr));
         m_scan = *scan_ptr;
-        m_scan.getXsYs(xs, ys);
+        occuPointsMat = m_scan.getXsYsMatrix();
 
 
         m_scan.RangesVal() -= contour_offset;
-        m_scan.getXsYs(xs_offset, ys_offset);
 
-        contour.clear();
-        contours.clear();
-        // push contour to contour vector
-        // get local grid size
-        float local_x_min = xs.min();
-        float local_y_min = ys.min();
-        float local_x_max = xs.max();
-        float local_y_max = ys.max();
-
-        local_x_min = std::fmin(local_x_min, 0.0);
-
-
-        int local_height = static_cast<int>(round((local_x_max - local_x_min) / grid_resolution));
-        int local_width = static_cast<int>(round((local_y_max - local_y_min) / grid_resolution));
-
-        // ====== end preocess scan
-
-
-        // porcess contour
-        cv::Mat local_grid(local_height, local_width, CV_8UC1, cv::Scalar(0));
-//        std::cout << "mat " << local_grid.rows << ", " << local_grid.cols << std::endl;
-        cv::Point p0(static_cast<int>(round((-local_y_min) / grid_resolution)),
-                     static_cast<int>(round((-local_x_min) / grid_resolution)));
-
-        contour.push_back(p0);//your cont
-        occuPoints.clear();
-
-        for (int i = 0; i < (*scan_ptr).ranges.size(); i++) {
-
-            size_t px = clip(static_cast<int>(round((ys_offset[i] - local_y_min) / grid_resolution)), 0,
-                             local_grid.cols - 1);
-            size_t py = clip(static_cast<int>(round((xs_offset[i] - local_x_min) / grid_resolution)), 0,
-                             local_grid.rows - 1);
-
-            cv::Point p(px, py);
-
-
-            int ec = 0;
-            try {
-                contour.push_back(p);//your cont
-                local_grid.at<uchar>(p) = 255;
-//                std::cout << "point [ " << p.x << ", " << p.y << " ]\n" ;
-//                std::cout << "grid  [ " << local_grid.cols << ", " << local_grid.rows << " ]\n" ;
-
-                if (p.x >= local_grid.cols || p.y >= local_grid.rows) {
-                    std::cout << "=====" << std::endl;
-                    exit(0);
-                }
-                occuPoints.push_back(static_cast<double>(xs[i]));
-                occuPoints.push_back(static_cast<double>(ys[i]));
-
-            }
-            catch (const std::bad_alloc &) {
-
-                ec = 1;
-            }
-            catch (const std::exception &) {
-                ec = 2;
-                // You can inspect what() for a particular reason, or even try to dynamic_cast<>
-                // to find out which specific exception was thrown.
-            }
-            catch (...) {
-                // You have no more type info here, this should be done for last resort (in the
-                // outermost scope) only.
-                ec = 3;
-            }
-        }
-
-//        continue;
-
-
-        try {
-            contours.push_back(contour);
-
-        } catch (std::exception &e) {
-            std::cout << "=== exception  " << e.what() << std::endl;
-        }
-
-
-        // fill free lable
-
-
-        std::vector<double> freePoints;
-        freePoints.clear();
-        {
-            cv::Scalar free_lable(100);
-
-            cv::drawContours(local_grid, contours, 0, free_lable, CV_FILLED); // 0: index of contours,
-            cv::Rect rect = boundingRect(contours[0]);
-            int left = rect.x;
-            int top = rect.y;
-            int width = rect.width;
-            int height = rect.height;
-            int x_end = left + width;
-            int y_end = top + height;
-
-//        freePoints.push_back(-1.0);
-//        freePoints.push_back(0.0);
-
-            for (size_t x = left; x < x_end; x++) {
-                for (size_t y = top; y < y_end; y++) {
-                    cv::Point p(x, y);
-
-                    uchar v = 0;//local_grid.at<uchar>(p);
-                    try {
-                        v = local_grid.at<uchar>(p);
-
-                    } catch (const std::bad_alloc &) {
-                        std::cout << "get contour error " << std::endl;
-                    }
-                    catch (...) {
-                        std::cout << "get contour error " << std::endl;
-                    }
-
-                    if (100 == v) {
-                        local_grid.at<uchar>(p) = 128;
-
-                        /*
-                         *
-                         *
-                         * */
-
-                        double xf = y * grid_resolution + local_x_min;
-                        double yf = x * grid_resolution + local_y_min;
-
-                        int ec = 0;
-                        try {
-
-                            freePoints.push_back(xf);
-                            freePoints.push_back(yf);
-                        }
-                        catch (const std::bad_alloc &) {
-                            ec = 1;
-                        }
-                        catch (const std::exception &) {
-                            ec = 2;
-                            // You can inspect what() for a particular reason, or even try to dynamic_cast<>
-                            // to find out which specific exception was thrown.
-                        }
-                        catch (...) {
-                            // You have no more type info here, this should be done for last resort (in the
-                            // outermost scope) only.
-                            ec = 3;
-                        }
-
-//                    cv::Point p2(static_cast<int>(round((yf - local_y_min) / grid_resolution)),
-//                                static_cast<int>(round((xf - local_x_min) / grid_resolution)));
-//                    local_grid.at<uchar>(p2) = 98;
-//                    std::cout << "p2: index: " << x << ", " << y << std::endl;
-//                    std::cout << "p2: position : " << xf << ", " << yf << std::endl;
-
-//                    std::cout << "p2: local_min: " << local_x_min << ", " << local_y_min << std::endl;
-
-
-//                    std::cout << "p2: " << p2.x << ", " << p2.y << std::endl;
-
-//                    exit(0);
-                    }
-                }
-            }
-
-        }
-
-
-        auto occuPointsMat = eigen_util::createMatrix<double, Eigen::ColMajor>(&(occuPoints[0]), 2,
-                                                                               occuPoints.size() / 2);
-
-        auto freePointsMat = eigen_util::createMatrix<double, Eigen::ColMajor>(&(freePoints[0]), 2,
-                                                                               freePoints.size() / 2);
-
-
-        // === end process contour
-
-
-
-        // === remap to grif frame
-
-
-        try {
+        freePointsMat = m_laser_grid.getFreePoints(m_scan);
+//        try {
             // map base_link
 
-            eigen_util::TransformationMatrix2d transMat(0.0, 0.0, 0.0 * 3.14159 / 4);
 
             // test change occu to free
-            auto occuPointsMatInMap = transMat * occuPointsMat;
-            auto freePointsMatInMap = transMat * freePointsMat;
+//             occuPointsMatInMap = transMat * occuPointsMat;
+//             freePointsMatInMap = transMat * freePointsMat;
 
             // map grid origin
-            eigen_util::TransformationMatrix2d originTrans(-20.0, -20.0, 0.0);
 
-            Eigen::MatrixXd occupointsMatInGrid = originTrans.inverse() * occuPointsMatInMap;
-            Eigen::MatrixXd freepointsMatInGrid = originTrans.inverse() * freePointsMatInMap;
+#if 1
+        auto origin2_to_map = m_map_grid_origin.inverse() * transMat;
+        freepointsMatInGrid_index1 = origin2_to_map * freePointsMat;
+        occupointsMatInGrid_index1 = origin2_to_map * occuPointsMat;
+
+        occupointsMatInGrid_index1 = occupointsMatInGrid_index1.array() * 20.0;
+        freepointsMatInGrid_index1 = freepointsMatInGrid_index1.array() * 20.0;
+//
+//         freepointsMatInGrid_index = freepointsMatInGrid_index1.cast<int>();
+//         occupointsMatInGrid_index = occupointsMatInGrid_index1.cast<int>();
+
+#endif
 
 
             // pont index
-            Eigen::MatrixXi occupointsMatInGrid_index(2, occupointsMatInGrid.cols());
+#if 0
+        auto originToMap = originTrans.inverse() * transMat;
+             occupointsMatInGrid = originToMap* occuPointsMat;
+             freepointsMatInGrid = originToMap * freePointsMat;
 
-            Eigen::MatrixXi freepointsMatInGrid_index(2, freepointsMatInGrid.cols());
+        Eigen::MatrixXi occupointsMatInGrid_index(2, occupointsMatInGrid.cols());
 
-            for (int i = 0; i < occupointsMatInGrid_index.cols(); i++) {
-                occupointsMatInGrid_index(0, i) = occupointsMatInGrid(0, i) / grid_resolution;
-                occupointsMatInGrid_index(1, i) = grid_height - occupointsMatInGrid(1, i) / grid_resolution;
+        Eigen::MatrixXi freepointsMatInGrid_index(2, freepointsMatInGrid.cols());
 
-            }
+        for (int i = 0; i < occupointsMatInGrid_index.cols(); i++) {
+            occupointsMatInGrid_index(0, i) = occupointsMatInGrid(0, i) / grid_resolution;
+            occupointsMatInGrid_index(1, i) = grid_height - occupointsMatInGrid(1, i) / grid_resolution;
 
-            for (int i = 0; i < freepointsMatInGrid_index.cols(); i++) {
-                freepointsMatInGrid_index(0, i) = freepointsMatInGrid(0, i) / grid_resolution;
-                freepointsMatInGrid_index(1, i) = grid_height - freepointsMatInGrid(1, i) / grid_resolution;
+        }
 
-            }
+        for (int i = 0; i < freepointsMatInGrid_index.cols(); i++) {
+            freepointsMatInGrid_index(0, i) = freepointsMatInGrid(0, i) / grid_resolution;
+            freepointsMatInGrid_index(1, i) = grid_height - freepointsMatInGrid(1, i) / grid_resolution;
 
+        }
+
+#endif
+
+//
+//        std::cout << "m_map_grid_origin:\n" << m_map_grid_origin.matrix() << std::endl;
+//        std::cout << "true occupointsMatInGrid_index\n" << occupointsMatInGrid_index.block(0,0,2,15) << std::endl;
+//        std::cout << "false occupointsMatInGrid_index\n" << occupointsMatInGrid_index2.block(0,0,2,15) << std::endl;
+//
+//        exit(2);
 //            std::cout << "================== bug1 \n" <<occupointsMatInGrid_index << std::endl;
 //            std::cout << "================== bug2 \n" <<freepointsMatInGrid_index << std::endl;
 
 //            exit(0);
 //    cv::warpAffine(local_grid, global_grid, rotateMat, global_grid.size(), cv::INTER_NEAREST);
 
+        // free cell value = 0
+
+        for (int i = 0; i < freepointsMatInGrid_index1.cols(); i++) {
+            cv::Point p(static_cast<int>(freepointsMatInGrid_index1(1, i)),
+                        static_cast<int>(freepointsMatInGrid_index1(0, i)));
 
 
-            // occupied cell value = 255
-            for (int i = 0; i < occupointsMatInGrid_index.cols(); i++) {
-                cv::Point p(static_cast<int>(occupointsMatInGrid_index(0, i)),
-                            static_cast<int>(occupointsMatInGrid_index(1, i)));
+//                global_grid.at<uchar>(p) = 128;
 
 
-                global_grid.at<uchar>(p) = 255;
+            float &v = prob_grid.at<float>(p);
+            Hmmparams1.Q()(0, 1) = v;
+            Hmmparams1.Q()(0, 0) = 1.0 - Hmmparams1.Q()(0, 1);
+
+
+            // predict cell state in predct grid
+            int pred_state = 0;
+
+            int obs = 0, state = 0;
+            float prob;
+            Hmm::predictOne(Hmmparams1, obs, state, prob);
+            v = Hmmparams1.Q()(0, 1);
+
+            if (pred_state == 0) {
+                predict_grid.at<uchar>(p) = 0;
+            } else {
+                predict_grid.at<uchar>(p) = 100;
+
+            }
+        }
+
+        // occupied cell value = 255
+        for (int i = 0; i < occupointsMatInGrid_index1.cols(); i++) {
+            cv::Point p(static_cast<int>(occupointsMatInGrid_index1(1, i)),
+                        static_cast<int>(occupointsMatInGrid_index1(0, i)));
+
+
+//                global_grid.at<uchar>(p) = 255;
 
                 // predict cell state in predct grid
-                Hmmparams1.Q()(0, 1) = prob_grid.at<float>(p);
-                Hmmparams1.Q()(0, 0) = 1.0 - Hmmparams1.Q()(0, 1);
+            float &v = prob_grid.at<float>(p);
+            Hmmparams1.Q()(0, 1) = v;
+            Hmmparams1.Q()(0, 0) = 1.0 - Hmmparams1.Q()(0, 1);
 
-                int pred_state = 1;
-                int obs = 1, state = 0;
+
+            int pred_state = 1;
+            int obs = 1, state = 0;
                 float prob;
                 Hmm::predictOne(Hmmparams1, obs, state, prob);
 
-                prob_grid.at<float>(p) = Hmmparams1.Q()(0, 1);
+
+            v = Hmmparams1.Q()(0, 1);
 
                 if (pred_state == 0) {
                     predict_grid.at<uchar>(p) = 0;
                 } else {
-                    predict_grid.at<uchar>(p) = 255;
+                    predict_grid.at<uchar>(p) = 100;
 
                 }
 
 //             cv::circle(global_grid, p, 3, cv::Scalar(255));
 
             }
-            // free cell value = 0
-            for (int i = 0; i < freepointsMatInGrid_index.cols(); i++) {
-                cv::Point p(static_cast<int>(freepointsMatInGrid_index(0, i)),
-                            static_cast<int>(freepointsMatInGrid_index(1, i)));
 
-
-                global_grid.at<uchar>(p) = 128;
-
-
-                Hmmparams1.Q()(0, 1) = prob_grid.at<float>(p);
-                Hmmparams1.Q()(0, 0) = 1.0 - Hmmparams1.Q()(0, 1);
-
-
-                // predict cell state in predct grid
-                int pred_state = 0;
-
-                int obs = 0, state = 0;
-                float prob;
-                Hmm::predictOne(Hmmparams1, obs, state, prob);
-                prob_grid.at<float>(p) = Hmmparams1.Q()(0, 1);
-
-                if (pred_state == 0) {
-                    predict_grid.at<uchar>(p) = 0;
-                } else {
-                    predict_grid.at<uchar>(p) = 255;
-
-                }
-            }
 
             // unobserve cell value = 128
 //        for (int i = 0; i < occupointsMatInGrid_index.cols(); i++) {
@@ -457,41 +628,39 @@ int main(int argc, char *argv[]) {
 //
 //
 //        }
-        } catch (...) {
-            std::cerr << "ff3 " << std::endl;
-        }
+//        } catch (...) {
+//            std::cerr << "ff3 " << std::endl;
+//        }
+
+        t.stop();
+        time_all += t.elapsedSeconds();
+        std::cout << "time 2 " << time_all / cnt << ", " << t.elapsedSeconds() << std::endl;
 
 
-        bool get = node.getOneMsg("/map", 1);
-
-        if (get) {
-            cv::Mat ros_grid((*map_ptr).info.height, (*map_ptr).info.width, CV_8UC1, &((*map_ptr).data[0]));
-            cv::imshow("ros_grid", ros_grid);
-
-        }
         m_map.info.width = predict_grid.cols;
         m_map.info.height = predict_grid.rows;
         m_map.info.resolution = grid_resolution;
         m_map.data.clear();
         m_map.info.origin.position.x = -20;
         m_map.info.origin.position.y = -20;
-
-        for (int i = 0; i < m_map.info.width; i++) {
+        m_map.info.origin.orientation.w = 1;
+        for (int i = m_map.info.width - 1; i >= 0; i--) {
             for (int j = 0; j < m_map.info.height; j++) {
                 signed int d = predict_grid.at<uchar>(i, j);
                 m_map.data.emplace_back(d);
             }
         }
         map_pub.publish(m_map);
-        cv::imshow("local_grid", local_grid);
 
-        cv::imshow("global_grid", global_grid);
+//        cv::imshow("local_grid", local_grid);
+//
+//        cv::imshow("global_grid", global_grid);
+//
+//        cv::imshow("predict_grid", predict_grid);
+//
+//        cv::imshow("prob_grid", prob_grid);
 
-        cv::imshow("predict_grid", predict_grid);
-
-        cv::imshow("prob_grid", prob_grid);
-
-        cv::waitKey(1);
+//        cv::waitKey(1);
 //        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 

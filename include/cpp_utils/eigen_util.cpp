@@ -16,9 +16,10 @@ namespace eigen_util {
     };
 
 
-    inline Eigen::Matrix2d getRotation2dFromYaw(double yaw, bool cw) {
+    template<typename T>
+    inline Eigen::Matrix<T, 2, 2> getRotation2dFromYaw(T yaw, bool cw) {
         //yaw is a counterclockwise rotation of alpha about the zaxis
-        Eigen::Matrix2d rotation;
+        Eigen::Matrix<T, 2, 2> rotation;
 
         rotation << cos(yaw), ((cw) ? -1 : 1) * sin(yaw),
                 ((cw) ? 1 : -1) * sin(yaw), cos(yaw);
@@ -41,11 +42,26 @@ namespace eigen_util {
 
     }
 
-    inline Eigen::Matrix3d getTransform2d(double x, double y, double yaw) {
+//    inline Eigen::Matrix3d getTransform2d(double x, double y, double yaw) {
+//        //http://f1tenth.org/slides/l3-1.pdf
+//        Eigen::Matrix3d trans;
+//        trans.setZero();
+//        Eigen::Vector3d t;
+//        t << x, y, 1.0;
+//        trans.block(0, 0, 2, 2) = getRotation2dFromYaw(yaw);
+//        trans.block(0, 2, 3, 1) = t;
+//
+//        return trans;
+//
+//
+//    }
+
+    template<typename T>
+    inline Eigen::Matrix<T, 3, 3> getTransform2d(T x, T y, T yaw) {
         //http://f1tenth.org/slides/l3-1.pdf
-        Eigen::Matrix3d trans;
+        Eigen::Matrix<T, 3, 3> trans;
         trans.setZero();
-        Eigen::Vector3d t;
+        Eigen::Matrix<T, 3, 1> t;
         t << x, y, 1.0;
         trans.block(0, 0, 2, 2) = getRotation2dFromYaw(yaw);
         trans.block(0, 2, 3, 1) = t;
@@ -55,36 +71,40 @@ namespace eigen_util {
 
     }
 
-
-    TransformationMatrix2d::TransformationMatrix2d() {
-        trans_3d = getTransform2d(0, 0, 0);
+    template<typename T1>
+    TransformationMatrix2d<T1>::TransformationMatrix2d() {
+        trans_3d = getTransform2d(static_cast<T1>(0.0), static_cast<T1>(0.0), static_cast<T1>(0.0));
     }
 
-    TransformationMatrix2d::TransformationMatrix2d(double x, double y, double yaw) {
+    template<typename T>
+    TransformationMatrix2d<T>::TransformationMatrix2d(T x, T y, T yaw) {
         trans_3d = getTransform2d(x, y, yaw);
     }
 
 
-    TransformationMatrix2d &TransformationMatrix2d::operator=(const Eigen::MatrixXd &matrix) {
+    template<typename T>
+    TransformationMatrix2d<T> &TransformationMatrix2d<T>::operator=(const Eigen::Matrix<T, 3, 3> &matrix) {
         trans_3d = matrix;
         return *this;
     }
 
-    TransformationMatrix2d::TransformationMatrix2d(const Eigen::MatrixXd &matrix) {
+    template<typename T>
+    TransformationMatrix2d<T>::TransformationMatrix2d(const Eigen::Matrix<T, 3, 3> &matrix) {
         trans_3d = matrix;
     }
 
-    TransformationMatrix2d &TransformationMatrix2d::operator=(const TransformationMatrix2d &matrix) {
+    template<typename T>
+    TransformationMatrix2d<T> &TransformationMatrix2d<T>::operator=(const TransformationMatrix2d &matrix) {
         trans_3d = matrix.trans_3d;
         return *this;
     }
 
 
     ////
+    template<typename T>
+    Eigen::Matrix<T, 2, 1> TransformationMatrix2d<T>::operator*(const Eigen::Matrix<T, 2, 1> &x) {
 
-    Eigen::Vector2d TransformationMatrix2d::operator*(const Eigen::Vector2d &x) {
-
-        Eigen::Vector3d x_;
+        Eigen::Matrix<T, 3, 1> x_;
         x_.setOnes();
         x_.segment(0, 2) = x;
 
@@ -93,9 +113,11 @@ namespace eigen_util {
 
     }
 
-    Eigen::MatrixXd TransformationMatrix2d::operator*(const Eigen::MatrixXd &x) {
+    template<typename T>
+    Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>
+    TransformationMatrix2d<T>::operator*(const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> &x) {
         // x : 2d col vector 2*n
-        Eigen::MatrixXd x_(3, x.cols());
+        Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> x_(3, x.cols());
         x_.setOnes();
         x_.block(0, 0, 2, x.cols()) = x;
 
@@ -103,20 +125,22 @@ namespace eigen_util {
         return (trans_3d * x_).block(0, 0, 2, x.cols());
     }
 
-
-    Eigen::MatrixXd &TransformationMatrix2d::matrix() {
+    template<typename T>
+    Eigen::Matrix<T, 3, 3> &TransformationMatrix2d<T>::matrix() {
 
         return trans_3d;
 
 
     }
 
-    TransformationMatrix2d TransformationMatrix2d::operator*(TransformationMatrix2d rv) {
+    template<typename T>
+    TransformationMatrix2d<T> TransformationMatrix2d<T>::operator*(TransformationMatrix2d &rv) {
         TransformationMatrix2d res(this->trans_3d * rv.matrix());
         return res;
     }
 
-    TransformationMatrix2d TransformationMatrix2d::inverse() {
+    template<typename T>
+    TransformationMatrix2d<T> TransformationMatrix2d<T>::inverse() {
         TransformationMatrix2d res(this->trans_3d.inverse());
         return res;
     }

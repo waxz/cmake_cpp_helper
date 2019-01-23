@@ -235,6 +235,22 @@ namespace ros_util {
         ys = ranges_val * cache_sin;
     }
 
+    Eigen::MatrixXf &LaserScan::getXsYsMatrix() {
+        ValarrayF xs;
+        ValarrayF ys;
+        getXsYs(xs, ys);
+        // oringin * pixel-matrix
+        Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> PositionMatrix(2, xs.size());
+
+        Eigen::Map<Eigen::MatrixXf> xm(&(xs[0]), 1, xs.size());
+        Eigen::Map<Eigen::MatrixXf> ym(&(ys[0]), 1, ys.size());
+//
+        PositionMatrix.row(0) << xm;
+        PositionMatrix.row(1) << ym;
+        m_PositionMatrix = PositionMatrix;
+        return m_PositionMatrix;
+    }
+
     LaserScan::ValarrayF &LaserScan::getRangesVal() {
         ranges_val = std::valarray<float>(&(ranges[0]), ranges.size());
 
@@ -265,9 +281,9 @@ namespace ros_util {
         height = a.info.height;
         width = a.info.width;
         resolution = a.info.resolution;
-        origintransformation = eigen_util::TransformationMatrix2d(a.info.origin.position.x,
-                                                                  a.info.origin.position.y,
-                                                                  tf::getYaw(a.info.origin.orientation));
+        origintransformation = eigen_util::TransformationMatrix2d<float>(a.info.origin.position.x,
+                                                                         a.info.origin.position.y,
+                                                                         tf::getYaw(a.info.origin.orientation));
     }
 
     GridMap::GridMap(const GridMap &a) {

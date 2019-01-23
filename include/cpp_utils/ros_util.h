@@ -14,6 +14,9 @@
 
 #include <sensor_msgs/LaserScan.h>
 #include <nav_msgs/OccupancyGrid.h>
+
+
+#include <Eigen/Eigen>
 #include <thread>                   // thread
 #include <memory>                   // shared_ptr
 #include <functional>               // bind
@@ -178,6 +181,7 @@ namespace ros_util {
         float range_max;
         float angle_increment;
         std::string frame_id;
+        Eigen::MatrixXf m_PositionMatrix;
 
 //        uint64_t stamp_nsec;
         template<typename T>
@@ -216,6 +220,8 @@ namespace ros_util {
 
         void getXsYs(ValarrayF &xs, ValarrayF &ys);
 
+        Eigen::MatrixXf &getXsYsMatrix();
+
         ValarrayF &getIntensitiesVal();
 
 #if 0
@@ -241,7 +247,7 @@ namespace ros_util {
         size_t width;
         double resolution;
 
-        eigen_util::TransformationMatrix2d origintransformation;
+        eigen_util::TransformationMatrix2d<float> origintransformation;
 
 
         uint8_t rr;
