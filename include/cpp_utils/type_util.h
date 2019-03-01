@@ -24,4 +24,5 @@ namespace type_util {
     };
 
 }
+
 #endif //DEMO_TYPE_UTIL_H

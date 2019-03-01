@@ -15,9 +15,9 @@ endif ()
 #https://stackoverflow.com/questions/28939652/how-to-detect-sse-sse2-avx-avx2-avx-512-avx-128-fma-kcvi-availability-at-compile
 #https://stackoverflow.com/questions/1778538/how-many-gcc-optimization-levels-are-there
 if (CMAKE_BUILD_TYPE MATCHES Release)
-
-    set(CMAKE_CXX_FLAGS_RELEASE "-Ofast")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -g -Ofast -ffast-math -O3 -march=native -fopenmp -mavx -mfma")
+    #-Wall -Wextra -pedantic
+    #    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}   -Ofast  -ffast-math -ftree-vectorize   -march=native -funsafe-loop-optimizations -mavx -mfma")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}   -Wall -Wextra -fopenmp-simd  -Ofast   -march=native -funsafe-loop-optimizations -mavx -mfma")
 
 endif ()
 if (CMAKE_BUILD_TYPE MATCHES Debug)
@@ -25,13 +25,11 @@ if (CMAKE_BUILD_TYPE MATCHES Debug)
 
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wno-unknown-pragmas -Wno-sign-compare -Woverloaded-virtual -Wwrite-strings -Wno-unused")
         set(CMAKE_CXX_FLAGS_DEBUG "-g3")
-        set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -g  -fprofile-arcs -ftest-coverage -Wno-dev ")
     endif ()
 endif ()
-set(CMAKE_CXX_FLAGS_DEBUG "-O0")             # 调试包不优化
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG ")   # release包优化
+
 message(STATUS "CMAKE_BUILD_TYPE= " ${CMAKE_BUILD_TYPE})
 
 cmake_policy(SET CMP0041 NEW)

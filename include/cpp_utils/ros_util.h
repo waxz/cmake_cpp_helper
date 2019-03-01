@@ -14,7 +14,7 @@
 
 #include <sensor_msgs/LaserScan.h>
 #include <nav_msgs/OccupancyGrid.h>
-
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
 
 #include <Eigen/Eigen>
 #include <thread>                   // thread
@@ -31,6 +31,7 @@
 #include "signal_util.h"            // msg queue
 #include "thread_util.h"  // thread
 #include "eigen_util.h"
+#include "ublas.h"
 
 namespace ros_util {
 
@@ -170,8 +171,7 @@ namespace ros_util {
         VectorF intensities;
         ValarrayF ranges_val;
         ValarrayF intensities_val;
-        ValarrayF cache_cos;
-        ValarrayF cache_sin;
+
         ValarrayF cache_angle;
         ValarrayF cache_xs;
         ValarrayF cache_ys;
@@ -182,6 +182,7 @@ namespace ros_util {
         float angle_increment;
         std::string frame_id;
         Eigen::MatrixXf m_PositionMatrix;
+        ublas::matrix<float> m_ublasMatrix;
 
 //        uint64_t stamp_nsec;
         template<typename T>
@@ -199,6 +200,9 @@ namespace ros_util {
 //            stamp_nsec = a.header.stamp.toNSec();
         }
 
+    public:
+        ValarrayF cache_cos;
+        ValarrayF cache_sin;
 
     public:
         LaserScan() {};     // copy constructor
@@ -221,6 +225,8 @@ namespace ros_util {
         void getXsYs(ValarrayF &xs, ValarrayF &ys);
 
         Eigen::MatrixXf &getXsYsMatrix();
+
+        ublas::matrix<float> &getXsYsMatrix_ublas();
 
         ValarrayF &getIntensitiesVal();
 

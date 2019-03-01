@@ -184,6 +184,11 @@ namespace ros_util {
     }
 
 
+
+
+
+    // laser scan
+
     LaserScan &LaserScan::operator=(const sensor_msgs::LaserScan &a) {
 
         copy(a);
@@ -218,7 +223,7 @@ namespace ros_util {
     void LaserScan::cache() {
         if (ranges.size() != cache_angle.size() || cache_angle[0] != angle_min) {
             cache_angle = ValarrayF(0.0, ranges.size());
-            for (int i = 0; i < ranges.size(); i++) {
+            for (size_t i = 0; i < ranges.size(); i++) {
                 cache_angle[i] = angle_min + i * angle_increment;
             }
             cache_cos = cos(cache_angle);
@@ -233,6 +238,19 @@ namespace ros_util {
         cache();
         xs = ranges_val * cache_cos;
         ys = ranges_val * cache_sin;
+    }
+
+    ublas::matrix<float> &LaserScan::getXsYsMatrix_ublas() {
+        ValarrayF xs;
+        ValarrayF ys;
+        getXsYs(xs, ys);
+
+        m_ublasMatrix = ublas::scalar_matrix<float>(3, xs.size(), 1);
+
+        std::copy(std::begin(xs), std::end(xs), m_ublasMatrix.begin2() + 0);
+
+        std::copy(std::begin(ys), std::end(ys), m_ublasMatrix.begin2() + xs.size());
+        return m_ublasMatrix;
     }
 
     Eigen::MatrixXf &LaserScan::getXsYsMatrix() {

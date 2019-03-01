@@ -1,32 +1,5 @@
-#include <cpp_utils/qt_util.h>
-#include <cpp_utils/ros_util.h>
-#include <cpp_utils/eigen_util.h>
 
-#include <cstdint>
-#include <algorithm>
-#include <iostream>
-#include <iomanip>
-#include <random>
-#include "backend.h"
-
-#include <HMM/Hmm.h>
-
-#include <boost/multiprecision/gmp.hpp>  // Defines the wrappers around the GMP library's types
-#include <boost/random/mersenne_twister.hpp>
-#include <boost/random/uniform_int_distribution.hpp>
-#include <boost/random/uniform_real_distribution.hpp>
-
-namespace mp = boost::multiprecision;
-
-#include <opencv2/opencv.hpp>
-#include <ros/ros.h>
-
-template<typename T>
-T clip(const T &n, const T &lower, const T &upper) {
-    return std::max(lower, std::min(n, upper));
-}
-
-
+#include <demo/grid.h>
 /*
  * ===============
  *     grid map
@@ -146,15 +119,7 @@ public:
 };
 
 
-std::vector<std::vector<cv::Point>> createXsYsMatrix() {
-    GridMap *gm;
-    ros_util::LaserScan ls;
 
-
-    auto mm = ls.getXsYsMatrix();
-
-
-}
 
 class SimpleGrid {
 public:
@@ -181,11 +146,15 @@ public:
         return *m_grid;
     }
 
-    SimpleGrid(float grid_resolution, int grid_height = 0) :
+    SimpleGrid(float grid_resolution, size_t grid_height = 0) :
             m_grid_resolution(grid_resolution),
-            isOriginSet(false),
-            m_grid_height(grid_height) {
+            m_grid_height(grid_height),
+            isOriginSet(false) {
 
+    }
+
+    float getResolution() {
+        return m_grid_resolution;
     }
 
     void setOrigin(double x_, double y_, double yaw_, OriginType type_) {
@@ -297,32 +266,467 @@ public:
 
 };
 
-struct SimpleArray {
-    std::vector<double> data;
-    size_t m_rows;
-    size_t m_cols;
 
-    SimpleArray(int rows_, int cols_) : m_rows(rows_), m_cols(cols_) {
+struct KeyComp {
 
-        data.resize(rows_ * cols_);
+    bool operator()(const cv::Point &p1, const cv::Point &p2) {
+
+
+        return (p1.x * 10000 + p1.y) > (p2.x * 10000 + p2.y);
     }
+};
 
-    double &operator()(int i, int j) {
-        return data[i * m_cols + j];
-    }
+struct CellState {
 
-    size_t rows() {
-        return m_rows;
-    }
+    // state cache
+    int last_state;
+    int current_state;
 
-    size_t cols() {
-        return m_cols;
+    // observation cache
+    int last_obs;
+    int current_obs;
+
+    // dynamic type
+    // stabd for different HMM model
+    int dynamic_type;
+
+    //======Q
+    float m_current_Q;
+    float m_default_Q;
+
+    /* ============= latest obs
+     * 0 free, 1 occu, 2 unobserve(default)
+     *
+     * */
+    int m_cell_obs;
+    //
+
+    CellState() {
+
     }
 
 };
 
 
+/*
+ * store map
+ *
+ * store changes in map
+ *
+ * surport look up function
+ *
+ * or create temp map
+ *
+ *
+ * given laserscan , m0, robot pose
+ * return new map and probobility
+ *
+ * */
+class MapManager {
+
+    ros::NodeHandle m_nh;
+    ros::NodeHandle m_nh_private;
+
+    // a life long map
+    // a reference
+    cv::Mat m_life_long_map;
+
+    // vector of hmm model
+    std::vector <Hmm::HmmParams> m_hmm_params;
+
+    // change statics for each hmm model
+    std::vector <Eigen::Matrix<float, 4, Eigen::Dynamic>> m_hmm_static;
+
+    // int model number
+    int m_model_num;
+
+    std::map <cv::Point, CellState, KeyComp> m_cell_dict;
+
+    std::map<cv::Point, signed char> m_dynamic_grid;
+
+    // laser scan data and grid
+    SimpleGrid &m_map_grid;
+
+    // a vector store the changed cell
+
+    Eigen::MatrixXf m_freePointsMat;
+    Eigen::MatrixXf m_occuPointsMat;
+
+    // map to grid origin
+    eigen_util::TransformationMatrix2d<float> m_map_grid_origin;
+
+
+    /*
+     * Q is impaotant
+     * where to store Q
+     * map
+     * */
+    std::map<cv::Point, float> m_Q_dict;
+
+
+    explicit MapManager(SimpleGrid &map_grid) : m_map_grid(map_grid) {
+
+        // process global map grid
+        m_map_grid_origin = m_map_grid.getOriginMatrix();
+
+        // 1.startt thread
+
+
+        // 2.create partial cloud
+
+
+    }
+
+    void updateMap(eigen_util::TransformationMatrix2d<float> robot_pose) {
+
+        //======================
+        // transform local grid to global grid
+
+        auto origin2_to_map = m_map_grid_origin.inverse() * robot_pose;
+        Eigen::MatrixXf freepointsMatInGrid, occupointsMatInGrid;
+
+
+        freepointsMatInGrid = origin2_to_map * m_freePointsMat;
+        occupointsMatInGrid = origin2_to_map * m_occuPointsMat;
+
+        occupointsMatInGrid = occupointsMatInGrid.array() * m_map_grid.getResolution();
+        freepointsMatInGrid = freepointsMatInGrid.array() * m_map_grid.getResolution();
+
+        //======================================
+        // update global grid
+
+        // go through free mat
+        // update m_cell_dict
+        cv::Point pc;
+        for (int i = 0; i < freepointsMatInGrid.cols(); i++) {
+            pc.x = 1;
+            pc.y = 2;
+            m_cell_dict[pc];
+
+            // check dynamic type
+            // dynamic type data store in
+            auto label = m_life_long_map.at<signed char>(pc);
+            // lasbel = -1 or 0, 100
+
+        }
+
+
+
+
+
+
+
+//
+
+        //
+    }
+
+
+    /* a signal thread wait for start command
+     * start in constructor
+     * */
+    std::string cmd_param_name;
+    bool cmd_param;
+
+    void sigThread() {
+        // look up ros param
+        ros::Rate r(1);
+        bool cmd_param_update;
+        while (ros::ok) {
+            m_nh.param(cmd_param_name, cmd_param_update, cmd_param);
+
+            // command update
+            if (cmd_param_update != cmd_param) {
+
+                cmd_param = cmd_param_update;
+
+                // start
+                if (cmd_param_update) {
+                    // start
+
+                } else {
+                    // stop
+
+                };
+            }
+
+            r.sleep();
+
+        }
+        ROS_ERROR("Thread Done!!");
+
+    }
+
+
+    void run() {
+
+        //1. check command
+
+        //2. update lastest robot pose from tf tree or last updated pose
+
+        //3.wait laser scan data
+
+        //4.look up odom change
+
+
+        //5.create local grid
+
+        //6. initialise partial cloud or updata partial cloud
+
+    }
+
+
+};
+
+/*====
+ * partial class
+ * contain map m, map change mx, pose x, reference of laserscan, map
+ *
+ *
+ * method updateX(x) : set robot(laser) pose in partial
+ *
+ * updateLaser(): compute transition probability and update map, compute match weight
+ *
+ * */
+
 int main(int argc, char *argv[]) {
+
+    {
+
+        Eigen::MatrixXd mm(3, 50);
+        mm.setRandom();
+//        mm << 1,2,3,4,5,6,7,8,9;
+        std::cout << "mm" << mm.row(3) << std::endl;
+        std::unordered_map<cv::Point, int> kk;
+        std::map<cv::Point, int, KeyComp> kk2;
+
+        cv::Point p(3, 4);
+        kk[p] = 888;
+        kk2[p] = 888;
+
+        for (int i = 0; i < 20 * 20 * 20; i++) {
+//            auto m2 = m1.clone();
+//            m2(cv::Range(1,100), cv::Range(1,100)) = 2;
+
+
+            p.x = i;
+            p.y = 0;
+            kk2[p] = i;
+            kk[p] = i;
+
+//            auto a = m1.ptr<char>(2,3);
+        }
+
+        cv::Mat m1(1000, 1000, CV_8SC1);
+        time_util::Timer tv;
+        tv.start();
+        for (int i = 0; i < 20 * 20 * 20 * 1000; i++) {
+//            auto m2 = m1.clone();
+//            m2(cv::Range(1,100), cv::Range(1,100)) = 2;
+
+
+            kk[p];
+//            auto a = m1.ptr<char>(2,3);
+        }
+        tv.stop();
+        std::cout << m1(cv::Range(1, 10), cv::Range(1, 10)) << std::endl;
+        std::cout << "tv " << tv.elapsedSeconds() << std::endl;
+
+        std::cout << "kk[p]" << kk[p] << std::endl;
+        return 0;
+
+
+
+        // ================================
+        // HMM
+        Eigen::MatrixXf Q(1, STATE_DIM);
+        Q << 0.5, 0.5;
+
+        // static occupy
+        Eigen::MatrixXf A1(STATE_DIM, STATE_DIM);
+        A1 << 0.2, 0.8, 0.05, 0.95;
+
+        // static free
+        Eigen::MatrixXf A2(STATE_DIM, STATE_DIM);
+        A2 << 0.95, 0.05, 0.8, 0.2;
+
+        // dynamic
+        Eigen::MatrixXf A3(STATE_DIM, STATE_DIM);
+        A3 << 0.8, 0.2, 0.2, 0.8;
+
+        Eigen::MatrixXf B(STATE_DIM, OBS_DIM);
+        B << 0.9, 0.05, 0.05, 0.05, 0.9, 0.05;
+
+        Hmm::TensorX4 Fi(STATE_DIM, STATE_DIM, STATE_DIM, OBS_DIM);
+        Hmm::TensorX3 Gama(STATE_DIM, STATE_DIM, OBS_DIM);
+
+        Fi.setZero();
+        Gama.setZero();
+        Hmm::HmmParams Hmmparams1(Q, A1, B, Fi, Gama);
+        Hmm::HmmParams Hmmparams2(Q, A2, B, Fi, Gama);
+        Hmm::HmmParams Hmmparams3(Q, A3, B, Fi, Gama);
+
+        //===caculate som statics data
+#if 0
+        float forget_prob = 0.91;
+        float free_prob = 0.89;
+
+
+
+        std::map<cv::Point, CellState, KeyComp> grid_cell_dict;
+
+
+
+
+        std::vector<cv::Point> freePoints, occuPoints;
+        int data_size = 10;
+        for (int i = 0; i < data_size ; i++){
+            freePoints.emplace_back(i,i+3);
+            occuPoints.emplace_back(i,i+6);
+        }
+
+
+        cv::Mat mat(100,100,CV_8SC1, cv::Scalar(3));
+
+
+        std::vector<cv::Point> set1, set2, set3;
+
+
+
+        CellState cellstate;
+
+        // go through free point
+        data_size = freePoints.size()
+        for (int i = 0; i < data_size ; i++){
+
+            auto p = freePoints[i];
+            // check cell id label
+            // label store in cv::Mat
+            int label = mat.at<char>(p);
+
+            // each label share a samw hmm model
+            // except the Q probility
+            cellstate.m_cell_label = label;
+//            grid_cell_dict[p] = cellstate;
+
+            if (label == 0){
+
+                /*
+                 * each label has 3 kind cell
+                 * 1) still free , with the same Q for all
+                 * 2) dynamic free or occu, with different Q for each cell
+                 * 3) unobserve , long time not detect  ,with different Q for each cell
+                 * 4) forget
+                 *
+                 *
+                 * */
+
+                /*
+                 * how to divide
+                 * 1) if obs change, the move to dynamic
+                 * 2) if is free and Q reach limit
+                 * 3) if not observed , move to unobserved
+                 * 4) if
+                 *
+                 * */
+
+                // check latest obs
+                // current obs is free
+                if (grid_cell_dict[p].m_cell_obs != label ){
+
+                    grid_cell_dict[p].m_cell_label = 1 ;
+                }
+
+                if (fabs( mat.at<char>(p) - 0.89) < 0.05 ){
+                    grid_cell_dict[p].m_cell_label = 0 ;
+
+                }else{
+                    grid_cell_dict[p].m_cell_label = 1 ;
+
+                }
+
+                set1.push_back(p);
+
+                //
+                // cluster according to probility
+
+
+            }
+            if (label == 1){
+                if (grid_cell_dict[p].m_cell_obs != label ){
+
+                    grid_cell_dict[p].m_cell_label = 1 ;
+                }
+
+                if (fabs( mat.at<char>(p) - 0.89) < 0.05 ){
+                    grid_cell_dict[p].m_cell_label = 0 ;
+
+                }else{
+                    grid_cell_dict[p].m_cell_label = 1 ;
+
+                }
+                set2.push_back(p);
+
+            }
+            if (label == 2){
+                if (grid_cell_dict[p].m_cell_obs != label ){
+
+                    grid_cell_dict[p].m_cell_label = 1 ;
+                }
+
+                if (fabs( mat.at<char>(p) - 0.89) < 0.05 ){
+                    grid_cell_dict[p].m_cell_label = 0 ;
+
+                }else{
+                    grid_cell_dict[p].m_cell_label = 1 ;
+
+                }
+                set3.push_back(p);
+
+            }
+
+
+
+
+
+        }
+
+        for (auto it = grid_cell_dict.begin(); it != grid_cell_dict.end(); it++){
+
+            // check lable
+             // use dynamic Q or still Q
+            if (it->second.m_cell_label){
+
+                auto prob = mat.at<uchar>(it->first);
+                int pred_state = 0;
+
+                int obs = 1, state = 0;
+                Hmm::predictOne(Hmmparams1, obs, state, prob);
+                it->second.m_valid = 1;
+            }else{
+                it->second.m_valid = 0;
+
+            }
+
+            // store the result
+
+        }
+
+
+        for (int i = 0; i < 20;i ++){
+            // predict cell state in predct grid
+            int pred_state = 0;
+
+            int obs = 1, state = 0;
+            float prob;
+            Hmm::predictOne(Hmmparams1, obs, state, prob);
+            std::cout << "~" << Hmmparams1.Q()(0, 1)<< std::endl;
+        }
+#endif
+    }
+
+
+    return 0;
 
 #if 0
     std::vector<double> x1{1,2,3,4};
@@ -453,7 +857,6 @@ int main(int argc, char *argv[]) {
     cv::Mat prob_grid(grid_height, grid_width, CV_32F, cv::Scalar(0.5));
 
 
-
     ros_util::LaserScan m_scan;
     SimpleGrid m_laser_grid(0.04);
     SimpleGrid m_map_grid(0.05, 40);
@@ -495,14 +898,14 @@ int main(int argc, char *argv[]) {
 
         freePointsMat = m_laser_grid.getFreePoints(m_scan);
 //        try {
-            // map base_link
+        // map base_link
 
 
-            // test change occu to free
+        // test change occu to free
 //             occuPointsMatInMap = transMat * occuPointsMat;
 //             freePointsMatInMap = transMat * freePointsMat;
 
-            // map grid origin
+        // map grid origin
 
 #if 1
         auto origin2_to_map = m_map_grid_origin.inverse() * transMat;
@@ -518,7 +921,7 @@ int main(int argc, char *argv[]) {
 #endif
 
 
-            // pont index
+        // pont index
 #if 0
         auto originToMap = originTrans.inverse() * transMat;
              occupointsMatInGrid = originToMap* occuPointsMat;
@@ -593,7 +996,7 @@ int main(int argc, char *argv[]) {
 
 //                global_grid.at<uchar>(p) = 255;
 
-                // predict cell state in predct grid
+            // predict cell state in predct grid
             float &v = prob_grid.at<float>(p);
             Hmmparams1.Q()(0, 1) = v;
             Hmmparams1.Q()(0, 0) = 1.0 - Hmmparams1.Q()(0, 1);
@@ -601,25 +1004,25 @@ int main(int argc, char *argv[]) {
 
             int pred_state = 1;
             int obs = 1, state = 0;
-                float prob;
-                Hmm::predictOne(Hmmparams1, obs, state, prob);
+            float prob;
+            Hmm::predictOne(Hmmparams1, obs, state, prob);
 
 
             v = Hmmparams1.Q()(0, 1);
 
-                if (pred_state == 0) {
-                    predict_grid.at<uchar>(p) = 0;
-                } else {
-                    predict_grid.at<uchar>(p) = 100;
-
-                }
-
-//             cv::circle(global_grid, p, 3, cv::Scalar(255));
+            if (pred_state == 0) {
+                predict_grid.at<uchar>(p) = 0;
+            } else {
+                predict_grid.at<uchar>(p) = 100;
 
             }
 
+//             cv::circle(global_grid, p, 3, cv::Scalar(255));
 
-            // unobserve cell value = 128
+        }
+
+
+        // unobserve cell value = 128
 //        for (int i = 0; i < occupointsMatInGrid_index.cols(); i++) {
 //            cv::Point p(static_cast<int>(occupointsMatInGrid_index(0,i)),
 //                        static_cast<int>(occupointsMatInGrid_index(1,i)));

@@ -13,7 +13,7 @@ namespace eigen_util {
         Eigen::Map<Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic, M>> res(p, rows, cols);
         return res;
 
-    };
+    }
 
 
     template<typename T>

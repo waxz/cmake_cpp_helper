@@ -17,5 +17,10 @@ namespace ros_util {
     Node::createSubscriber(std::string topic_name, unsigned int buffer_size,
                            std::shared_ptr<nav_msgs::OccupancyGrid> dst);
 
+    //geometry_msgs::PoseWithCovarianceStamped
+    template std::shared_ptr<geometry_msgs::PoseWithCovarianceStamped>
+    Node::createSubscriber(std::string topic_name, unsigned int buffer_size,
+                           std::shared_ptr<geometry_msgs::PoseWithCovarianceStamped> dst);
+
 
 }
