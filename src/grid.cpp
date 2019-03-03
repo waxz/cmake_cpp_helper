@@ -4,6 +4,10 @@
 #include <demo/grid.h>
 
 namespace grid_util {
+    template<typename T>
+    inline T clip(const T &n, const T &lower, const T &upper) {
+        return std::max(lower, std::min(n, upper));
+    }
 
     LaserGrid::LaserGrid(float grid_resolution) :
             m_grid_resolution(grid_resolution),
@@ -147,16 +151,7 @@ namespace grid_util {
 
     }
 
-    // laser beam model
-    void LaserGrid::createBeamBase(float yaw, std::valarray<float> &cos_val, std::valarray<float> &sin_val) {
 
-        // check angle range and resolution
-        std::valarray<float> cache_angle = m_scan.cache_angle + yaw;
-        cos_val = m_grid_resolution * cos(cache_angle);
-        sin_val = m_grid_resolution * sin(cache_angle);
-
-
-    }
 
     void LaserGrid::createBeam() {
 

@@ -28,12 +28,9 @@ namespace mp = boost::multiprecision;
 
 #include <opencv2/opencv.hpp>
 #include <ros/ros.h>
+#include <omp.h>
 
 
-template<typename T>
-T clip(const T &n, const T &lower, const T &upper) {
-    return std::max(lower, std::min(n, upper));
-}
 
 
 /*=================
@@ -119,7 +116,11 @@ namespace grid_util {
 
         // =================
         // laser beam model
-        void createBeamBase(float yaw, std::valarray<float> &cos_val, std::valarray<float> &sin_val);
+        void createBeamBase(float yaw, std::valarray<float> &cos_val, std::valarray<float> &sin_val) {
+            std::valarray<float> cache_angle = m_scan.cache_angle + yaw;
+            cos_val = m_grid_resolution * cos(cache_angle);
+            sin_val = m_grid_resolution * sin(cache_angle);
+        };
 
         // sample date point on each beam
         void createBeam();

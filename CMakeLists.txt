@@ -18,7 +18,7 @@ set(MCMAKE_MODULE_PATH ${CMAKE_MODULE_PATH})
 include(SetEnv)
 include(SetBuildFlag)
 #set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopt-info-vec-optimized ")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx -mtune=haswell -fopt-info-vec-optimized -mavx -ftree-vectorize -msse2 -ffast-math -fopt-info-vec-optimized  -opt-report=5 -opt-report-file=stderr -opt-report-phase=all")
 
 include(FindPackageHelper)
 include(CmakeUtils)
