@@ -20,6 +20,134 @@
 #include <nav_msgs/OccupancyGrid.h>
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <geometry_msgs/PoseArray.h>
+#include <boost/multiprecision/cpp_dec_float.hpp>
+
+namespace mp_util {
+    struct mp_float {
+        float v_valid;
+        int v_log;
+
+        void set(float v) {
+
+            v_valid = v;
+            v_log = 0;
+
+        }
+
+        mp_float() {
+            set(0.0);
+        }
+
+        mp_float(float v) {
+            set(v);
+        }
+
+        mp_float(const mp_float &v) {
+
+            v_valid = v.v_valid;
+            v_log = v.v_log;
+        }
+
+        mp_float &operator=(const float &v) {
+            set(v);
+            return *this;
+
+        }
+
+        void operator=(const mp_float &v) {
+
+            v_valid = v.v_valid;
+            v_log = v.v_log;
+
+//        return *this;
+        }
+
+        mp_float operator*(float v) {
+            mp_float res;
+            res.v_log = v_log;
+            res.v_valid = v_valid;
+
+            res.v_valid *= v;
+            if (fabs(res.v_valid) > 1e36 ||
+                fabs(res.v_valid) < 1e-36) {//|| (v_valid  < 1e-38 || v_valid  > -1e-38 ) || v_valid < -1e38 ){
+                int v_update = int(std::log10(res.v_valid));
+
+                res.v_valid /= std::pow(10, v_update);
+
+                res.v_log += v_update;
+
+            }
+
+            return res;
+        }
+
+        mp_float operator*=(float v) {
+            v_valid *= v;
+            if (fabs(v_valid) > 1e35 ||
+                fabs(v_valid) < 1e-35) {//|| (v_valid  < 1e-38 || v_valid  > -1e-38 ) || v_valid < -1e38 ){
+                int v_update = int(std::log10(v_valid));
+
+                v_valid /= std::pow(10, v_update);
+
+                v_log += v_update;
+            }
+        }
+
+        void prod_v(const float &v) {
+            v_valid *= v;
+            if (fabs(v_valid) > 1e35 ||
+                fabs(v_valid) < 1e-35) {//|| (v_valid  < 1e-38 || v_valid  > -1e-38 ) || v_valid < -1e38 ){
+                int v_update = int(std::log10(v_valid));
+
+                v_valid /= std::pow(10, v_update);
+
+                v_log += v_update;
+            }
+        }
+
+        mp_float operator*=(const mp_float &v) {
+            v_valid *= v.v_valid;
+            if (fabs(v_valid) > 1e36 ||
+                fabs(v_valid) < 1e-36) {//|| (v_valid  < 1e-38 || v_valid  > -1e-38 ) || v_valid < -1e38 ){
+                int v_update = int(std::log10(v_valid));
+
+                v_valid /= std::pow(10, v_update);
+
+                v_log += v_update;
+            } else {
+                v_log += v.v_log;
+
+            }
+        }
+
+
+        bool operator>(const mp_float &rv) const {
+            int sub = rv.v_log - this->v_log;
+
+            if (rv.v_valid > 0 != this->v_valid > 0 || sub == 0) {
+                return (rv.v_valid < this->v_valid);
+            }
+            if (rv.v_valid * this->v_valid != 0) {
+                return (rv.v_valid * pow(10, sub) < this->v_valid);
+
+            }
+
+
+            return (rv.v_log < this->v_log) && (rv.v_valid < this->v_valid);
+        }
+
+        bool operator<(const mp_float &rv) const {
+            return !(rv > *this);
+        }
+
+        void print() {
+            std::cout << v_valid << " e " << v_log << std::endl;
+        }
+
+    };
+
+}
+
 
 namespace std {
 #pragma omp declare simd
@@ -37,28 +165,35 @@ float normal_pdf(float x, float m, float s) {
 
 //    inv_sqrt_2pi / s * std::exp(-0.5f * a * a);
 
-    float pdf_gaussian = (1 / (s * sqrt(2 * M_PI))) * exp(-0.5 * pow((x - m) / s, 2.0));
+    float pdf_gaussian = (1.0 / (s * sqrt(2 * M_PI))) * exp(-0.5 * pow((x - m) / s, 2.0));
 
     return pdf_gaussian;
 }
 
 struct GaussLUT {
-    std::vector<float> data;
+    std::vector<float> data_vec;
     float m_max_x;
     size_t m_max_num;
+    float *data;
+    float scale;
 
     GaussLUT(float m, float s, float max_x, size_t max_num) : m_max_x(max_x), m_max_num(max_num) {
-        data = std::vector<float>(max_num, 0.0);
+        data_vec = std::vector<float>(max_num, 0.0);
         float b = max_x / max_num;
         for (size_t i = 0; i < max_num; i++) {
-            data[i] = normal_pdf(i * b, m, s);
+            data_vec[i] = normal_pdf(i * b, m, s);
         }
+        data = &(data_vec[0]);
+        scale = m_max_num / m_max_x;
+
     }
 
     float operator()(float x) {
         size_t index = m_max_num * x / m_max_x;
-        return data[index];
+        return data_vec[index];
     }
+
+
 };
 
 
@@ -69,15 +204,9 @@ struct Partial {
     float weight;
 //    mp::mpf_float match_weight;
     float match_weight;
+    mp_util::mp_float mp_weight;
 
-    cv::Point getPose() {
-        cv::Point p(map_laser_pose.matrix()(0, 2), map_laser_pose.matrix()(1, 2));
-        return p;
-    }
-
-    cv::Point poseInMap;
-
-    Partial() : minv_beam(ublas::matrix<float>(3, 3)) {
+    Partial() : minv_beam(ublas::matrix<float>(3, 3)), mp_weight(1.0) {
 
     }
 };
@@ -85,6 +214,30 @@ struct Partial {
 int main(int argc, char **argv) {
 
     std::cout << "hello" << std::endl;
+#if 0
+    mp_util::mp_float pf1 = 0.1e-5;
+    mp_util::mp_float pf2 = 1e-5;
+    mp_util::mp_float pf0 = 0.0;
+
+    pf1.prod_v(1e-4);
+    pf2.prod_v(9e-4);
+
+
+
+    time_util::Timer t1;
+    t1.start();
+    for (int i = 0; i < 1000 ; i++){
+        std::cout << (pf1 > pf2) << std::endl;
+
+    }
+    t1.stop();
+    std::cout << "== time: " << t1.elapsedSeconds() << std::endl;
+
+    pf1.print();
+    pf2.print();
+    exit(2);
+
+#endif
 
 //    GaussLUT gaussLUT(0.0, 0.2, 1.0, 20);
 //    for (int i = 0; i < 20 ;i++){
@@ -94,6 +247,8 @@ int main(int argc, char **argv) {
 //
 //
 //    exit(2);
+    GaussLUT glt(0.0, 0.5, 0.6, 100);
+
     ros::init(argc, argv, "demo");
     ros::NodeHandle nh;
     ros::Publisher scan_pub = nh.advertise<sensor_msgs::LaserScan>("scan2", 1);
@@ -240,7 +395,7 @@ int main(int argc, char **argv) {
 //    std::cout << "get data\n" << m_scan.getXsYsMatrix_ublas() << std::endl;
     node.getOneMsg("/initialpose", -1);
 
-    mp::mpf_float global_best_weight = 10000.0;
+    mp_util::mp_float global_best_weight = 0.0;
     std::vector<float> js(40);
     std::iota(js.begin(), js.end(), -20);
 
@@ -269,7 +424,7 @@ int main(int argc, char **argv) {
 
         bool g = node.getOneMsg("/initialpose", 0.1);
         if (g) {
-            global_best_weight = 10000.0;
+            global_best_weight = 0.0;
         }
         auto initialpose = *initialpose_ptr;
 
@@ -303,6 +458,17 @@ int main(int argc, char **argv) {
         }
         timer.stop();
         std::cout << "sample time: " << timer.elapsedSeconds() << std::endl;
+#if 0
+        { int best_id = 0;
+            std::cout << "best id :" << best_id;
+            std::cout << "pose:\nx: " << Partials[best_id].map_laser_pose.getX() << " y: "
+                      << Partials[best_id].map_laser_pose.getY()
+                      << " yaw: " << Partials[best_id].map_laser_pose.getYaw() << std::endl;
+
+            exit(8);
+        }
+
+#endif
 
         partial_cloud.header.stamp = ros::Time::now();
         partial_cloud_pub.publish(partial_cloud);
@@ -439,6 +605,8 @@ int main(int argc, char **argv) {
                                   float *op_beam_ptr = op_beam.data().begin();
                                   size_t op_beam_size = op_beam.size2();
 
+                                  mp_util::mp_float *mp_weight = &(Partials[it].mp_weight);
+
                                   for (size_t i = 0; i < sz; i++) {
                                       int s = -laser_ranges[i] / resotion;
                                       s = std::clip(s, -20, 0) + 20;
@@ -452,9 +620,9 @@ int main(int argc, char **argv) {
 //                                      std::vector<int> pxsv(40,0.0);
 //                                      std::vector<int> pysv(40,0.0);
 
-                                      std::array<float, 40> pxsvf;
-                                      std::array<float, 40> pysvf;
-                                      std::array<float, 40> mask_val;
+//                                      std::array<float, 40> pxsvf;
+//                                      std::array<float, 40> pysvf;
+//                                      std::array<float, 40> mask_val;
 
                                       std::array<int, 40> pxsvi;
                                       std::array<int, 40> pysvi;
@@ -472,14 +640,13 @@ int main(int argc, char **argv) {
                                       size_t mat_dynamic_cols_1 = mat_dynamic.cols;
                                       size_t mat_dynamic_rows_1 = mat_dynamic.rows;
                                       float laser_resolution_1 = laser_resolution;
-                                      size_t u_zero = 0;
                                       unsigned char *input = (unsigned char *) (mat.data);
                                       float *js_ptr = &(js[0]);
-                                      float *xs_ptr = &(pxsvf[0]);
-                                      float *ys_ptr = &(pysvf[0]);
+//                                      float *xs_ptr = &(pxsvf[0]);
+//                                      float *ys_ptr = &(pysvf[0]);
                                       int *xs_ptr_i = &(pxsvi[0]);
                                       int *ys_ptr_i = &(pysvi[0]);
-                                      float *mask_val_ptr = &(mask_val[0]);
+//                                      float *mask_val_ptr = &(mask_val[0]);
 
 
 //                                      for(int j = 0;j < mat.rows;j++){
@@ -492,21 +659,9 @@ int main(int argc, char **argv) {
 
                                       bool track = true;
                                       int f_hit = e - 1;
-#pragma omp simd aligned (xs_ptr, ys_ptr, js_ptr, xs_ptr_i, ys_ptr_i, mask_val_ptr: 32) reduction(+ : f_hit)
+#pragma omp simd aligned (js_ptr, xs_ptr_i, ys_ptr_i: 32)
                                       for (int j = s; j < e; j++) {
 
-//                                          if (!track) continue;
-//                                          y_vec[j] = x_vec[i] * 6.7f;
-//                                          y_vec[j] = x_vec[i] * 67.7f;
-//
-//                                          y_vec[j] = std::clip(float(round(y_vec[i]*x_vec[j])) , float(i) * float(x_vec[j]) , mat_dynamic_cols_1);
-
-//                                          mask_val[0] = (2 - 3.4);
-#if 0
-                                          xs_ptr[j] = op_beam_x + js_ptr[j] * op_beam_cos;
-                                          ys_ptr[j] = op_beam_y + js_ptr[j] * op_beam_sin;
-
-#endif
 
 #if 1
                                           xs_ptr_i[j] = std::clip(
@@ -518,106 +673,50 @@ int main(int argc, char **argv) {
 
 #endif
 
-#if 0
-                                          float pv = mat.at<uchar>(xs_ptr_i[j], ys_ptr_i[j]);
-//                                          mask_val_ptr[j] = input[xs_ptr_i[j] + ys_ptr_i[j]];
-//                                          mask_val_ptr[j] = pv ;
-
-                                          if (pv  == 255 && track == true) {
-
-//                                              mask_val_ptr[j] = js_ptr[j]  ;
-
-                                              track = false;
-                                              f_hit = js_ptr[j];
-                                              continue;};
-
-#endif
-//                                          pxsv[j] = std::clip(int(round((op_beam_x + j * op_beam_cos) * 20.0f)) , int(0) , int(mat_dynamic_rows_1));
-
-//
-//                                          pxsv[j] = pxsvf[j];
-//                                          pysv[j] = size_t(pysvf[j]);
-
-
-//                                          pysv[j] = std::clip(float(round(pysv[j] * 20.0f)), 0.0f, mat_dynamic_cols);
-//                                          float pv = mat.at<uchar>(size_t(pxsv[j]), size_t(pysv[j]));
-//                                          mask_array[j] = input[j] ;//  *(1.0f / 255.0f)* (j - 20) * laser_resolution_1;
-
-//                                          mask_array[j] = input[size_t(pxsv[j])+size_t(pysv[j])] ;//  *(1.0f / 255.0f)* (j - 20) * laser_resolution_1;
-
-//                                          input[size_t(pxsv[j])+size_t(pysv[j])];
-#if 0
-
-
-                                          cv::Point p(round(pysv[j] *20), round(pxsv[j] *20));
-
-//                                          pxsv[j] = clip(float(round(pxsv[j] * 20)), 0.0f, mat_dynamic_rows);
-
-                                          // mask, if occupied mask = 1; if free mask = 0
-                                          mask_array[j] = (j - 20) * laser_resolution;
-
-                                          if (mat.at<uchar>(p) == 255 || j == e - 1) {
-
-                                              auto diff = fabs(j * laser_resolution);
-
-                                              diff = clip(static_cast<float>(diff), 0.01f, 0.5f);
-                                              match_weight += diff * diff;
-                                              break;
-
-                                          } else {
-
-                                          }
-#endif
 
                                       }
-//
-                                      //search mask array
-                                      // find smallest as raytrace result
-//                                      std::sort(mask_array,mask_array + 40);
 
-#if 0
-                                      float diff = fabs((f_hit - 20)* laser_resolution);
-
-//                                      diff = std::clip(static_cast<float>(diff), 0.01f, 0.5f);
-
-                                      match_weight += diff * diff;
-
-
-#endif
 
 #if 1
+//                                      *mp_weight = 1.0;
+
 //                                      #pragma omp parallel for  reduction(+:msum)
-                                      for (int j = 0; j < 40; j++) {
+                                      for (int j = s; j < e; j++) {
+                                          // todo test cv mat read speed
                                           float pv = mat.at<uchar>(xs_ptr_i[j], ys_ptr_i[j]);
+//                                          float pv = input[xs_ptr_i[j] + ys_ptr_i[j]];
                                           if (pv == 255 || j == e - 1) {
 
                                               auto diff = fabs((j - 20) * laser_resolution);
 
                                               diff = std::clip(static_cast<float>(diff), 0.01f, 0.5f);
-                                              match_weight += diff * diff;
+                                              float normal_weight = glt.data[int(glt.scale * diff)];
+                                              // todo check prod
+//                                              (*mp_weight) *= normal_weight;
+                                              mp_weight->prod_v(normal_weight);
+//                                              std::cout << "==== " <<it << std::endl;
+//                                              std::cout << "==== " <<it << "\nnormal_weight: " << normal_weight << std::endl;
+//                                              mp_weight->print();
+//                                              std::cout << "==== " <<it << std::endl;
+
+//                                              exit(33);
+//                                              match_weight += diff * diff;
                                               break;
 
                                           }
-//                                          msum += mask_array[mi];
+
                                       }
-//                                      msum = std::clip(static_cast<float>(msum), 0.01f, 0.5f);
-//                                      float ttt = msum * msum;
-//
-//                                      match_weight += msum*msum ;
-#endif
-
-//                                      mat.at<uchar>(0,0) = msum;
-//                                      Partials[it].match_weight = ttt;
-
-#if 1
-//                                      match_weight = match_weight +  msum * msum;
 
 #endif
+
 
 
 
                                   }
-                                  Partials[it].match_weight = match_weight;
+//                                  Partials[it].match_weight = match_weight;
+
+                                  // todo: speed Partials[it].mp_weight = mp_weight;
+//                                  Partials[it].mp_weight = mp_weight;
 
                               }
 
@@ -629,10 +728,11 @@ int main(int argc, char **argv) {
 
         timer.stop();
         std::cout << "total time: " << timer.elapsedSeconds() << std::endl;
-        auto best_weight = Partials[0].match_weight;
+        auto best_weight = Partials[0].mp_weight;
         size_t best_id = 0;
         for (size_t i = 0; i < 1000; i++) {
-//        std::cout << "------\n id " << i << " ---weight: " << Partials[i].match_weight << std::endl;
+//        std::cout << "------\n id " << i << " ---weight: " ;
+//            Partials[i].mp_weight.print();
 //        std::cout << "pose:\nx: " << Partials[i].map_laser_pose.getX() << " y: "<< Partials[i].map_laser_pose.getY()
 //                  << " yaw: " << Partials[i].map_laser_pose.getYaw()<< std::endl;
 //
@@ -645,8 +745,8 @@ int main(int argc, char **argv) {
 //
 //        }
 
-            if (Partials[i].match_weight < best_weight) {
-                best_weight = Partials[i].match_weight;
+            if (Partials[i].mp_weight > best_weight) {
+                best_weight = Partials[i].mp_weight;
                 best_id = i;
             }
         }
@@ -658,8 +758,8 @@ int main(int argc, char **argv) {
 
         std::cout << "best weight: " << Partials[best_id].match_weight << std::endl;
 
-        if (Partials[best_id].match_weight < global_best_weight) {
-            global_best_weight = Partials[best_id].match_weight;
+        if (Partials[best_id].mp_weight > global_best_weight) {
+            global_best_weight = Partials[best_id].mp_weight;
             //global_enable_match = true;
             final_pose.pose.position.x = Partials[best_id].map_laser_pose.getX();
             final_pose.pose.position.y = Partials[best_id].map_laser_pose.getY();
