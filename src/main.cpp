@@ -21,8 +21,8 @@
 #include <geometry_msgs/PoseWithCovarianceStamped.h>
 #include <geometry_msgs/PoseArray.h>
 #include <boost/multiprecision/cpp_dec_float.hpp>
-
 namespace mp_util {
+
     struct mp_float {
         float v_valid;
         int v_log;
@@ -93,8 +93,99 @@ namespace mp_util {
             }
         }
 
-        void prod_v(const float &v) {
-            v_valid *= v;
+        void prod_v(float v) {
+            if (0 != v_valid * v) {
+                v_valid *= v;
+                if (fabs(v_valid) > 1e35 ||
+                    fabs(v_valid) < 1e-35) {//|| (v_valid  < 1e-38 || v_valid  > -1e-38 ) || v_valid < -1e38 ){
+                    int v_update = int(std::log10(v_valid));
+
+                    v_valid /= std::pow(10, v_update);
+
+                    v_log += v_update;
+                }
+            } else {
+                if (v_valid >= v) {
+                    int v_update = int(std::log10(v));
+                    v /= std::pow(10, v_update);
+
+                    v_valid *= v;
+                    v_log += v_update;
+
+                }
+            }
+        }
+
+        void prod_mpf(mp_float v) {
+            {
+                int v_update = int(std::log10(v_valid));
+
+                v_valid /= std::pow(10, v_update);
+
+                v_log += v_update;
+            }
+            {
+                int v_update = int(std::log10(v.v_valid));
+
+                v.v_valid /= std::pow(10, v_update);
+
+                v.v_log += v_update;
+            }
+
+            v_valid *= v.v_valid;
+            v_log += v.v_log;
+            if (fabs(v_valid) > 1e35 ||
+                fabs(v_valid) < 1e-35) {//|| (v_valid  < 1e-38 || v_valid  > -1e-38 ) || v_valid < -1e38 ){
+                int v_update = int(std::log10(v_valid));
+
+                v_valid /= std::pow(10, v_update);
+
+                v_log += v_update;
+            }
+
+        }
+
+        void add_mpf(mp_float v) {
+            {
+                int v_update = int(std::log10(v_valid));
+
+                v_valid /= std::pow(10, v_update);
+
+                v_log += v_update;
+
+                if (v_valid == 0.0) {
+
+                    this->v_valid = v.v_valid;
+                    this->v_log = v.v_log;
+                    return;
+                }
+            }
+            {
+                int v_update = int(std::log10(v.v_valid));
+
+                v.v_valid /= std::pow(10, v_update);
+
+                v.v_log += v_update;
+            }
+
+            int sub = v.v_log - this->v_log;
+
+//            v_valid *= v;
+            if (sub > 0) {
+
+                this->v_log = v.v_log;
+                this->v_valid *= pow(0.1, sub);
+                this->v_valid += v.v_valid;
+
+            } else if (sub < 0) {
+
+                this->v_valid += v.v_valid * pow(10, sub);
+
+            } else if (0 == sub) {
+                this->v_valid += v.v_valid;
+
+            }
+
             if (fabs(v_valid) > 1e35 ||
                 fabs(v_valid) < 1e-35) {//|| (v_valid  < 1e-38 || v_valid  > -1e-38 ) || v_valid < -1e38 ){
                 int v_update = int(std::log10(v_valid));
@@ -105,6 +196,33 @@ namespace mp_util {
             }
         }
 
+        void devide_mpf(mp_float v) {
+            {
+                int v_update = int(std::log10(v_valid));
+
+                v_valid /= std::pow(10, v_update);
+
+                v_log += v_update;
+            }
+            {
+                int v_update = int(std::log10(v.v_valid));
+
+                v.v_valid /= std::pow(10, v_update);
+
+                v.v_log += v_update;
+            }
+            v_valid /= v.v_valid;
+            v_log -= v.v_log;
+            if (fabs(v_valid) > 1e35 ||
+                fabs(v_valid) < 1e-35) {//|| (v_valid  < 1e-38 || v_valid  > -1e-38 ) || v_valid < -1e38 ){
+                int v_update = int(std::log10(v_valid));
+
+                v_valid /= std::pow(10, v_update);
+
+                v_log += v_update;
+            }
+
+        }
         mp_float operator*=(const mp_float &v) {
             v_valid *= v.v_valid;
             if (fabs(v_valid) > 1e36 ||
@@ -145,6 +263,31 @@ namespace mp_util {
         }
 
     };
+
+
+    void pow_split(float a, float b, std::vector<float> &vc) {
+
+        float p = pow(a, b);
+        if (0 == p || std::isnan(p)) {
+            pow_split(a, int(b * 0.5), vc);
+
+            pow_split(a, b - int(b * 0.5), vc);
+
+        } else {
+            vc.push_back(b);
+        }
+    }
+
+    mp_float mp_pow(float base, float exp) {
+        mp_util::mp_float res = 1.0;
+
+        std::vector<float> vc(0);
+        pow_split(base, exp, vc);
+        for (auto i : vc) {
+            res.prod_v(pow(base, i));
+        }
+        return res;
+    }
 
 }
 
@@ -205,456 +348,316 @@ struct Partial {
 //    mp::mpf_float match_weight;
     float match_weight;
     mp_util::mp_float mp_weight;
+    mp_util::mp_float map_weight;
 
 
     std::valarray<float> Q;
     std::valarray<float> Q_;
 
+    // index array, store cell index
+    std::vector<int> occuPointIndex;
+    std::vector<float> occuPointQ;
+    std::vector<float> occuPointQ_;
+
+    std::vector<int> freePointIndex;
+    std::vector<float> freePointQ;
+    std::vector<float> freePointQ_;
+    // store update Q
+    ublas::compressed_matrix<float> global_map;
+    // store cell type
+    ublas::compressed_matrix<char> global_map_cell;
+
+    // local map
+    ublas::compressed_matrix<char> local_map;
+
+    std::valarray<int> erase_index1;
+    std::valarray<int> erase_index2;
+
     std::valarray<int> P;
+
+    // todo: cell transformation count [0,1,2,3,4,5]
+    // free 0-0,0-1,1-1,1-0
+    // occu 0-0,0-1,1-1,1-0
+    // dyna 0-0,0-1,1-1,1-0
+    std::valarray<int> m_chnage_cell_cnt;
+    std::valarray<float> m_change_cell_prob;
+    float m_normal_change_cell_prob;
+    float m_normal_change_cell_prob_base;
+    float m_map_update_weight;
+
 
 
     Partial() : minv_beam(ublas::matrix<float>(3, 3)), mp_weight(1.0),
-                P(1000 * 20 * 2), Q(0.0f, 1000 * 20), Q_(0.0f, 1000 * 20) {
+                P(1000 * 20 * 2), Q(0.0f, 1000 * 20), Q_(0.0f, 1000 * 20), m_chnage_cell_cnt(0, 12),
+                m_change_cell_prob(0.0, 12),
+                global_map(600, 600, 600 * 600),
+                erase_index1(2000), erase_index2(2000), m_map_update_weight(0.0) {
 
     };
 
+    void set_m_change_cell_prob(const std::valarray<float> &v) {
+        m_normal_change_cell_prob_base = v.min();
+        m_change_cell_prob = v / m_normal_change_cell_prob_base;
+    }
+
+
+    void reset_m_chnage_cell_cnt() {
+        for (auto &i : m_chnage_cell_cnt) {
+            i = 0;
+        }
+    }
+
+
 };
+
+class PartialManager {
+private:
+    size_t m_partial_num;
+    std::vector<Partial> partials;
+
+    // initial pose guass model
+
+    // movement model gauss model
+
+    // map resource path
+    std::string global_map_path;
+    std::string global_map_type_path;
+    cv::Mat global_map;
+    ublas::compressed_matrix<float> global_map_type;
+
+public:
+    PartialManager(size_t partial_num) : m_partial_num(partial_num), partials(1000) {
+
+    }
+
+    //get basic resource global map, cell type map
+    void read_map() {
+
+    }
+
+    // create_initial partial cloud with initial pose
+    // given robot_pose, guass model, partial number
+    void initial_pose() {
+
+    }
+
+
+    // update partial pose with movement model
+    // given robot movement, gauss model
+    void update_pose() {
+
+    }
+
+    // update weights using laser scan and map
+    void update_match_weight() {
+
+    }
+
+    // update weight using map transformation
+    void update_map() {
+
+    }
+
+    // mormalise weight
+    void normalise() {
+
+    }
+
+    // get best partial
+    void get_best_pose() {
+
+    }
+
+    // send robot pose
+    void send_pose() {
+
+    }
+
+    // publish map
+    void send_map() {
+
+    }
+
+    // main loop
+    void run() {
+
+        // wait a signal
+
+        // 1. get laser scan
+
+        // 2. update partial pose from tf tree or lastest partial pose or
+
+        // 3. compute match weight
+
+        // 4. update map
+
+        // 5. find best weight
+
+        // 6. update pose and map
+
+
+    }
+};
+
+struct ALut {
+    float m_a01;
+    float m_a11;
+    float m_resolution;
+    float m_scale;
+    size_t m_size;
+    std::vector<float> m_data;
+    float *data;
+
+    ALut(float a01, float a10, float resolution) : m_a01(a01), m_a11(1 - a10),
+                                                   m_resolution(resolution),
+                                                   m_scale(1 / resolution), m_size(m_scale), m_data(m_size) {
+
+
+        for (float i = 0; i < m_scale; i++) {
+            float q = i * m_resolution;
+            m_data[i] = (1 - q) * m_a01 + q * m_a11;
+        }
+        data = &(m_data[0]);
+    }
+
+    float operator()(float q) {
+        size_t index = q * m_scale;
+        return m_data[index];
+    }
+
+
+};
+
+struct BLut {
+    float m_b00;
+    float m_b11;
+    float m_resolution;
+    float m_scale;
+    size_t m_size;
+    std::vector<float> m_data;
+    float *data;
+
+    BLut(float b00, float b11, float resolution) : m_b00(b00), m_b11(b11),
+                                                   m_resolution(resolution),
+                                                   m_scale(1 / resolution), m_size(m_scale), m_data(m_size) {
+
+        for (float i = 0; i < m_scale; i++) {
+            float q = i * m_resolution;
+            m_data[i] = q * m_b11 / ((1 - q) * m_b00 + q * m_b11);
+        }
+        data = &(m_data[0]);
+    }
+
+    float operator()(float q) {
+        size_t index = q * m_scale;
+        return m_data[index];
+    }
+};
+
+void ff(float a, float b, std::vector<float> &vc) {
+
+    float p = pow(a, b);
+    if (0 == p || std::isnan(p)) {
+        ff(a, int(b * 0.5), vc);
+        ff(a, b - int(b * 0.5), vc);
+
+    } else {
+        vc.push_back(b);
+    }
+}
+
+void prod_recu(mp_util::mp_float &res, float b, float e) {
+
+    std::vector<float> vc(0);
+    ff(b, e, vc);
+    for (auto i : vc) {
+        res.prod_v(pow(b, i));
+    }
+}
 
 int main(int argc, char **argv) {
 
     std::cout << "hello" << std::endl;
-    {
-        std::vector<int> a{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 12};
-        ublas::compressed_matrix<int> am(1, 5, 4);
-        am(0, 1) = 1;
-        am(0, 2) = 0;
-
-        am(0, 3) = 2;
-        am.erase_element(0, 3);
 
 
-        am.index1_data();
-        a.resize(3);
-        for (auto i : am.value_data()) {
-            std::cout << i << std::endl;
-        }
-        for (auto it1 = am.begin1(); it1 != am.end1(); it1++) {
-            for (auto it2 = it1.begin(); it2 != it1.end(); it2++) {
-                std::cout << "(" << it2.index1() << "," << it2.index2() << ") = ";
-                std::cout << *it2 << std::endl;
-            }
-        }
 
-//        exit(3);
-    }
+
+
+
+
+
+
+    // copute 0.3^30 * 0.6^45
 #if 0
+
     {
-        mp_util::mp_float pf1 = 0.1e-5;
-    mp_util::mp_float pf2 = 1e-5;
-    mp_util::mp_float pf0 = 0.0;
+        float a = 0.3, af = 45;
+        float b = 0.6, bf = 66;
+        std::cout << pow(a,100) << std::endl;
 
-    pf1.prod_v(1e-4);
-    pf2.prod_v(9e-4);
+        auto w = mp_util::mp_pow(0.1,100);
+        auto w2 = mp_util::mp_pow(0.1,100);
 
 
+        mp_util::mp_float ss = 0.0;
+        for(int i = 0; i < 800; i++){
+            auto d1 = mp_util::mp_pow(0.1,100);
+            auto  d2 = mp_util::mp_pow(0.1,100);
 
-    time_util::Timer t1;
-    t1.start();
-    for (int i = 0; i < 1000 ; i++){
-        std::cout << (pf1 > pf2) << std::endl;
-
-    }
-    t1.stop();
-    std::cout << "== time: " << t1.elapsedSeconds() << std::endl;
-
-    pf1.print();
-    pf2.print();
-    exit(2);
-
-    }
-
-
-#endif
-
-
-#if 0
-    {
-
-        time_util::Timer t1;
-        t1.start();
-        // 1000 thread for map to update map
-        for (int i = 0; i < 1000*800; i++){
-
-            // matrix production
-
-
-
-            /*
-             *  q = [q0, q1]
-             *  A = [[a00, a01],
-             *       [a10, a11]]
-             *
-             *
-             * */
-            ublas::matrix<float> q(1,2);
-            ublas::matrix<float> a(2,1);
-
-            q(0,0) = 0.3;
-            q(0,1) = 0.7;
-            a(0,0) = 0.4;
-//            a(0,1) = 0.6;
-            a(1,0) = 0.7;
-//            a(1,1) = 0.3;
-
-//            std::cout << "q:\n" << q << std::endl;
-//            std::cout << "a:\n" << a << std::endl;
-
-            auto c = ublas::prod(q,a);
-//            std::cout << "c:\n" << c << std::endl;
-
-
-
-        }
-        t1.stop();
-        std::cout << "== time: " << t1.elapsedSeconds() << std::endl;
-
-        exit(34);
-    }
-#endif
-//    GaussLUT gaussLUT(0.0, 0.2, 1.0, 20);
-//    for (int i = 0; i < 20 ;i++){
-//        std::cout << "- " << gaussLUT.data[i] << std::endl;
-//    }
-//
-//
-//
-//    exit(2);
-
-#if 0
-    what data is there;
-    a cv::Mat contatin dynamic label, each label has a different A
-
-
-
-    q = q * A * B
-    q = q * A
-
-    // this step
-    q = q * B
-
-    for occupied point
-    B is the same
-    create a matrix of q
-
-    for p in op{
-
-        q = mat.at(p);
-
-        not every need update
-        point without update shoud push to a vector
-
-        if beams hit occupied cell
-
-
-        Q.push_back(q);
-
-    }
-    Q = QB;
-    update q;
-
-
-
-    for p in fp{
-
-
-
-    }
-#endif
-
-
-#if 1
-    // test mapped_matrix
-    {
-
-        // then update q in mat
-
-
-        /*
-
-         1.==============
-         * go through op
-         * get each px, py in op
-         * get each q in mat(px,py)
-         *
-         * push to Qs = [q0, q1, q2, q3]
-         * push to pxs = [px0, px1, px2]
-         * push to pys = [py0, py1, py2]
-         *
-         *
-         * for major free points
-         * push point with specific q to a vector
-         * need no computation
-         *
-         *
-         2. ==============
-         compute Qs = Qs * Bi
-
-         3. ==============
-         * go through pxs, pys
-         * mat(pxs[i}, pys[i]) = Qs[i]
-         *
-
-
-         4. ===============
-         * go through dense matrix
-         * get q = mat[i]
-         * given type T
-         * push q to Qt = [q0,..., q5, .... q16]
-         * push i to Qi = [0,......5,........16]
-
-         *
-         5. ================
-         * Q1 = Q1 * A1
-         * Q2 = Q2 * A1
-         * Q3 = Q3 * A1
-
-         6. ================
-         * go through Qi
-         * update mat[Q1[i]] = Qt1[i]
-         *
-
-         * */
-
-
-
-        time_util::Timer t1;
-
-#if 1
-        {
-            //====================== Q = Q * A
-
-            //
-            ublas::compressed_matrix<float> global_map(500, 500, 500 * 500);
-
-
-            ublas::matrix<float> op = ublas::zero_matrix<float>(2, 800 * 20);
-
-            ublas::matrix<float> Bo(1, 2);
-            Bo(0, 0) = 0;
-            Bo(0, 1) = 0;
-
-
-            std::vector<Partial> Partial2(1000);
-
-            ublas::matrix<float> mat_t1(3, 800 * 20);
-            ublas::matrix<float> mat_t2(3, 3);
-
-
-            t1.start();
-            tbb::parallel_for(tbb::blocked_range<int>(0, 1000),
-                              [&](tbb::blocked_range<int> r) {
-
-//#pragma omp simd
-                                  for (auto it = r.begin(); it < r.end(); it++) {
-
-
-                                      ublas::matrix<float> fp2;//(3,800*20);
-                                      ublas::noalias(fp2) = ublas::prod(mat_t2, mat_t1);
-
-
-                                      size_t sz = op.size2();
-                                      float *q_ptr = &(Partial2[it].Q[0]);
-                                      float *q_ptr_ = &(Partial2[it].Q_[0]);
-
-                                      int *p_ptr1 = &(Partial2[it].P[0]);
-                                      int *p_ptr2 = &(Partial2[it].P[0.5 * Partial2[it].P.size()]);
-
-                                      float *op_beam_ptr = op.data().begin();
-                                      size_t op_beam_size = op.size2();
-
-                                      // go through all points
-#pragma omp simd
-                                      for (int i = 0; i < sz; i++) {
-                                          p_ptr1[i] = int(op_beam_ptr[i]);
-                                          p_ptr2[i] = int(op_beam_ptr[i + op_beam_size]);
-
-                                          q_ptr[i] = global_map(p_ptr1[i], p_ptr2[i]);
-                                          float fpt = fp2(0, i) + fp2(1, i);
-
-                                          q_ptr_[i] = 1 - q_ptr[i];
-
-
-                                      }
-
-
-                                      // q = Q1
-                                      // Q = [Q0, Q1]
-                                      //
-
-                                      float A01 = 0.5;
-                                      float A11 = 0.5;
-
-
-                                      // compute Q
-#pragma omp simd
-                                      for (int i = 0; i < sz; i++) {
-
-                                          q_ptr[i] = q_ptr[i] * A11 + q_ptr[i] * A01;
-                                      }
-
-
-                                      // update map
-#pragma omp simd
-                                      for (int i = 0; i < sz; i++) {
-
-                                          global_map(p_ptr1[i], p_ptr2[i]) = q_ptr[i];
-                                      }
-
-                                      // loop through mat
-                                      // compute Q = Q * A
-
-
-                                      std::valarray<float> PT1(1000 * 20);
-                                      std::valarray<float> PT2(1000 * 20);
-                                      std::valarray<float> PT3(1000 * 20);
-
-                                      for (auto it1 = global_map.begin1(); it1 != global_map.end1(); it1++) {
-                                          for (auto it2 = it1.begin(); it2 != it1.end(); it2++) {
-//                                              std::cout << "(" << it2.index1() << "," << it2.index2() << ") = ";
-//                                              std::cout << *it2 << std::endl;
-                                              *it2;
-                                              if (2 == *it2) {
-
-                                              }
-                                          }
-                                      }
-
-
-                                  }
-
-
-                              });
-
-            t1.stop();
-            std::cout << "== stage Q = Q * B  time: " << t1.elapsedSeconds() << std::endl;
-            exit(88);
-
-
-        }
-        // END  Q = Q * A
-
-#endif
-
-
-        ublas::compressed_matrix<float> m2(500, 500, 500 * 500);
-        ublas::coordinate_matrix<float> m3(500, 500, 500 * 500);
-        ublas::compressed_matrix<float> m4(500, 500, 500 * 500);
-
-        auto m = m2;
-
-        for (unsigned long i = 0; i < 500; ++i)
-            for (unsigned long j = 0; j < 500; ++j) {
-                m(i, j) = i + j;
-//                m.erase_element(i,j);
-
-            }
-        std::cout << "== 11 " << std::endl;
-        m(0, 0) = 9;
-
-        std::cout << "== 22 " << std::endl;
-        std::vector<ublas::compressed_matrix<float>> mv(1000, ublas::compressed_matrix<float>(5000, 5000, 500 * 500));
-        t1.start();
-
-        tbb::parallel_for(tbb::blocked_range<int>(0, 1000),
-                          [&](tbb::blocked_range<int> r) {
-
-                              for (auto it = r.begin(); it != r.end(); it++) {
-
-                                  for (unsigned int i = 0; i < 500; i++)
-                                      for (unsigned int j = 0; j < 50; j++) {
-                                          mv[it](i, j) = i + j;
-
-//                                          mv[it].erase_element(i,j);
-
-//                                          m(i, j) = i + j;
-
-
-//                                      m.push_back(i,j,-1.0);
-                                      }
-                              }
-
-
-                          });
-
-
-        t1.stop();
-        std::cout << "==matrix_sparse  time: " << t1.elapsedSeconds() << std::endl;
-
-    }
-
-
-    while (1) {
-
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
-    exit(77);
-
-#endif
-
-#if 0
-    {
-
-        //a type mat
-        cv::Mat mat(100,100, CV_8SC1);
-
-        //a q mat
-        ublas::mapped_matrix q_mat(100,100);
-
-
-
-        // point in mat frame
-        ublas::matrix<float> op(2,5);
-        ublas::matrix<float> fp(2,5);
-        ublas::matrix<float> A(2,2);
-        ublas::matrix<float> B(2,2);
-
-        // initialise data
-
-
-        //1. Q = Q * A
-        // diffrent cell has different A
-        // look up table find cell type
-        // get q1, q2, q3 from table
-        // q1 = q1 * A
-        // q2 = q2 * A
-        std::vector<float> q11;
-        std::vector<float> q12;
-
-        for (int i = 0; i < op.size2(); i++){
-            float cell_t = mat.at<float>(4,5);
-
-            int c_t = static_cast<int>(cell_t);
-            if (c_t == 1){
-                q11.push_back(cell_t - static_cast<int>(cell_t));
-                q12.push_back(cell_t - static_cast<int>(cell_t));
-            }
+//            d1.prod_v(i);
+            d1.prod_mpf(d2);
+            ss.add_mpf(d1);
 
 
         }
 
-        // map vector to matrix
 
+        std::cout << "ss: ";
+        ss.print();
+        w.prod_mpf(w2);
+        w.devide_mpf(ss);
+        std::cout << "w: ";
+        w.print();
+//        w.prod_v(2.5);
+//        w.prod_mpf(w2);
 
+        w2.prod_mpf(w);
 
+        std::cout << "w: ";
 
-        //2. Q = Q * B
+        w.print();
+        std::cout << "w2: ";
 
-
+        w2.print();
+        ss.add_mpf(w2);
 
 
     }
-    exit(4);
+
+    exit(3);
 #endif
+
+    int szz = 800;
+    std::vector<int> tv(szz * 2);
+
+    int *tvp1 = &(tv[0]);
+    int *tvp2 = &(tv[size_t(szz)]);
+
+    for (int i = 0; i < szz; i++) {
+        tvp1[i] = i;
+        tvp2[i] = i;
+        std::cout << tvp1[i] << "," << tvp2[i] << ".";
+
+    }
+    std::cout << std::endl;
+
+    for (int i = 0; i < szz; i++) {
+        std::cout << tvp1[i] << "," << tvp2[i] << ".";
+
+    }
+
+
+    std::cout << std::endl;
 
 
     GaussLUT glt(0.0, 0.5, 0.6, 100);
@@ -684,7 +687,7 @@ int main(int argc, char **argv) {
     final_pose.header.frame_id = "base_laser";
 
 
-    test_main();
+//    test_main();
 //    exit(3);
 
     ublas_util::Transformation2d trans(0.5, 0.2, 0.5 * M_PI);
@@ -734,14 +737,18 @@ int main(int argc, char **argv) {
 
     ros_util::LaserScan m_scan;
     // 3. map grid
-    grid_util::MapGrid map_grid(0.05, 20.0);
-    map_grid.setOrigin(-10.0, -10.0, 0.0);
+    grid_util::MapGrid map_grid(0.05, 30.0);
+    map_grid.setOrigin(-15.0, -15.0, 0.0);
     auto map_origin = map_grid.getgetOriginMatrix_ublas();
     ublas_util::Transformation2d map_laser(0, 0, 0.0 * M_PI);
-    cv::Mat mat(400, 400, CV_8UC1, cv::Scalar(100));
+    cv::Mat mat(600, 600, CV_8UC1, cv::Scalar(100));
+    cv::Mat mat_update(600, 600, CV_8UC1, cv::Scalar(100));
+
     laser_grid.setContour_Offset(0.08);
     auto map_origin_inverse = map_origin.inverse();
     ublas::matrix<float> minv = ublas::prod(map_origin_inverse, map_laser.matrix());
+    mp_util::mp_float global_best_weight = 0.0;
+
 
     for (int i = 0; i < 40; i++) {
 
@@ -762,14 +769,14 @@ int main(int argc, char **argv) {
 
 
         for (size_t j = 0; j < fp1.size2(); j++) {
-            cv::Point p(round(fp1(1, j) / 0.05), round(fp1(0, j) / 0.05));
+            cv::Point p(round(fp1(1, j) * 20), round(fp1(0, j) * 20));
             p.x = std::clip(p.x, 0, mat.cols);
             p.y = std::clip(p.y, 0, mat.rows);
             mat.at<uchar>(p) = 0;
 
         }
         for (size_t j = 0; j < op1.size2(); j++) {
-            cv::Point p(round(op1(1, j) / 0.05), round(op1(0, j) / 0.05));
+            cv::Point p(round(op1(1, j) * 20), round(op1(0, j) * 20));
 
             p.x = std::clip(p.x, 0, mat.cols);
 
@@ -777,21 +784,31 @@ int main(int argc, char **argv) {
             mat.at<uchar>(p) = 255;
 
         }
+        mat(cv::Range(220, 365), cv::Range(220, 290)) = cv::Scalar(0);
+
+        cv::line(mat, cv::Point(220, 220), cv::Point(220, 365), cv::Scalar(255));
+        cv::line(mat, cv::Point(220, 220), cv::Point(330, 220), cv::Scalar(255));
+        cv::line(mat, cv::Point(220, 365), cv::Point(270, 365), cv::Scalar(255));
+
+        mat(cv::Range(230, 350), cv::Range(230, 380)) = cv::Scalar(150);
+
         cv::imshow("laser", mat);
 
         cv::waitKey(1);
 
     }
 
+//    cv::imwrite("map.jpg",mat);
+//    mat = cv::imread("map.jpg", -1);
 #if 1
-    std::cout << "dispaly" << std::endl;
+    std::cout << "wait intial pose" << std::endl;
 
     m_map.info.width = mat.cols;
     m_map.info.height = mat.rows;
     m_map.info.resolution = 0.05;
     m_map.data.clear();
-    m_map.info.origin.position.x = -10;
-    m_map.info.origin.position.y = -10;
+    m_map.info.origin.position.x = -15;
+    m_map.info.origin.position.y = -15;
     m_map.info.origin.orientation.w = 1;
     for (int i = m_map.info.width - 1; i >= 0; i--) {
         for (size_t j = 0; j < m_map.info.height; j++) {
@@ -802,10 +819,740 @@ int main(int argc, char **argv) {
 
 #endif
 
+    // test map update
+    {
+        std::cout << "start update map " << std::endl;
+
+        //create one partial
+        std::vector<Partial> Partials(100);
+        Partials[0].minv_beam = ublas::identity_matrix<float>(3, 3);
+        Partials[0].minv_beam(0, 2) = 10;
+        Partials[0].minv_beam(1, 2) = 10;
+
+        boost::random::normal_distribution<> gen_x(0.0, 0.15);
+        boost::random::normal_distribution<> gen_y(0.0, 0.15);
+        boost::random::normal_distribution<> gen_yaw(0.0, 0.05);
+
+        Partials[0].minv_beam = minv;
+
+
+        //global data
+        // store cell type
+        // todo:create matrix from map
+        ublas::compressed_matrix<char> global_map_cell(600, 600, 600 * 600);
+        for (int i = 0; i < mat.rows; i++) {
+            for (int j = 0; j < mat.cols; j++) {
+                if (mat.at<uchar>(i, j) == 150 || mat.at<uchar>(i, j) == 100) {
+                    global_map_cell(i, j) = 2;
+
+                }
+                if (mat.at<uchar>(i, j) == 255) {
+
+                    global_map_cell(i, j) = 1;
+                }
+            }
+        }
+        std::cout << "start update 22 " << std::endl;
+
+        std::array<float, 3> cell_q = {0.333, 0.666, 0.5};
+
+        // Hmm data
+        //========================
+        // A cell value
+        // A0 free
+        float freeA01 = 0.2;
+        float freeA11 = 0.6;
+        ALut freeAlut(freeA01, 1 - freeA11, 0.001);
+
+
+        // A1 occu
+        float occuA01 = 0.4;
+        float occuA11 = 0.8;
+        ALut occuAlut(occuA01, 1 - occuA11, 0.001);
+
+        // A2 dynamic
+
+        float dynaA01 = 0.4;
+        float dynaA11 = 0.6;
+        ALut dynaAlut(dynaA01, 1 - dynaA11, 0.001);
+
+
+        //========================
+        // B value
+        float B00 = 0.9;
+        float B01 = 0.1;
+
+        float B10 = 0.1;
+        float B11 = 0.95;
+
+        BLut missBlut(0.9, 0.1, 0.001);
+        BLut hitBlut(0.1, 0.9, 0.001);
+
+        // todo: change_prob
+        // free 0-0,0-1,1-1,1-0
+        // occu 0-0,0-1,1-1,1-0
+        // dyna 0-0,0-1,1-1,1-0
+        std::valarray<float> change_prob(12);
+        change_prob[0] = 1 - freeA01;
+        change_prob[1] = freeA01;
+        change_prob[2] = freeA11;
+        change_prob[3] = 1 - freeA11;
+        change_prob[4] = 1 - occuA01;
+        change_prob[5] = occuA01;
+        change_prob[6] = occuA11;
+        change_prob[7] = 1 - occuA11;
+        change_prob[8] = 1 - dynaA01;
+        change_prob[9] = dynaA01;
+        change_prob[10] = dynaA11;
+        change_prob[11] = 1 - dynaA11;
+
+        float bypass_free_q = 0.033719;
+        float limit_free_q = 0.2112;
+#if 0
+
+        {
+
+            float q = 0.5;
+            for(int i = 0;i < 20; i++){
+
+                q = hitBlut(q);
+
+                std::cout << q << ",";
+                q = freeAlut(q);
+                std::cout << q << "\n";
+
+            }
+            std::cout << "\n A\n";
+            for(int i = 0;i < 20; i++){
+
+
+                std::cout << q << ",";
+                q = freeAlut(q);
+                std::cout << q << "\n";
+
+            }
+            q = 0.0288567;
+            for(int i = 0;i < 20; i++){
+
+                q = hitBlut(q);
+
+                std::cout << q << ",";
+                q = freeAlut(q);
+                std::cout << q << "\n";
+
+            }
+            exit(9);
+        }
+#endif
+
+        std::cout << "start loop " << std::endl;
+        bool g = node.getOneMsg("/initialpose", -0.1);
+        auto initialpose = *initialpose_ptr;
+
+        if (g) {
+#pragma omp simd
+            for (int i = 0; i < 100; i++) {
+
+                ublas_util::Transformation2d map_laser_beam(gen_x(rng), gen_y(rng), gen_yaw(rng));
+
+                ublas::matrix<float> minv_beam(3, 3);
+                geometry_msgs::Pose p;
+
+                p.position.x = initialpose.pose.pose.position.x + map_laser_beam.getX();
+
+                p.position.y = initialpose.pose.pose.position.y + map_laser_beam.getY();
+
+                tf::quaternionTFToMsg(tf::createQuaternionFromYaw(
+                        tf::getYaw(initialpose.pose.pose.orientation) + map_laser_beam.getYaw()), p.orientation);
+
+                map_laser_beam.set(p.position.x, p.position.y, tf::getYaw(p.orientation));
+                if (i == 110) {
+                    map_laser_beam.set(0, 0, 0);
+                }
+                Partials[i].map_laser_pose = map_laser_beam;
+
+                partial_cloud.poses.push_back(p);
+
+                ublas::noalias(minv_beam) = ublas::prod(map_origin_inverse, map_laser_beam.matrix());
+
+                // todo: use sample pose
+                Partials[i].minv_beam = minv_beam; //minv; //
+                Partials[i].set_m_change_cell_prob(change_prob);
+            }
+
+            partial_cloud.header.stamp = ros::Time::now();
+            partial_cloud_pub.publish(partial_cloud);
+        }
+
+        while (ros::ok()) {
+            bool g = node.getOneMsg("/initialpose", 0.01);
+
+
+
+
+
+
+//            Partials[0].minv_beam = minv; //minv; //
+
+            // get laser
+            node.getOneMsg("/scan", -1);
+            scan = *(scan_ptr);
+            for (auto &reading : scan.ranges) {
+                reading = std::clip(reading, 0.0f, 10.0f);
+            }
+            // 2. laser grid
+            laser_grid.update(scan);
+
+            auto fp = laser_grid.getFreePointsMat_ublas();
+            auto op = laser_grid.getOccuPointsMat_ublas();
+
+
+            mat_update = cv::Scalar(100);
+
+            // process scan
+            time_util::Timer t1;
+            t1.start();
+
+            tbb::parallel_for(tbb::blocked_range<int>(0, 100),
+                              [&](tbb::blocked_range<int> r) {
+
+//#pragma omp simd
+                                  for (auto it = r.begin(); it < r.end(); it++) {
+                                      // get copy of local map
+                                      ublas::compressed_matrix<float> &global_map = Partials[it].global_map;
+                                      auto old_global_map = global_map;
+
+                                      ublas::matrix<float> op_beam = op;
+                                      ublas::noalias(op_beam) = ublas::prod(Partials[it].minv_beam, op);
+
+                                      ublas::matrix<float> fp_beam = fp;
+                                      ublas::noalias(fp_beam) = ublas::prod(Partials[it].minv_beam, fp);
+
+
+                                      // ================================
+                                      // Update Miss cell
+
+                                      size_t fp_sz = fp.size2();
+
+                                      //todo: update vector size or not
+                                      if (fp_sz > Partials[it].freePointQ.size()) {
+                                          Partials[it].freePointIndex.resize(fp_sz * 2);
+                                          Partials[it].freePointQ.resize(fp_sz);
+                                          Partials[it].freePointQ_.resize(fp_sz);
+                                      }
+                                      size_t freeCache_sz = 0.5 * Partials[it].freePointIndex.size();
+
+
+                                      //get pointer
+                                      float *freeQPtr = &(Partials[it].freePointQ[0]);
+                                      float *freeQ_Ptr = &(Partials[it].freePointQ_[0]);
+                                      int *freeIndex1_ptr = &(Partials[it].freePointIndex[0]);
+                                      int *freeIndex2_ptr = freeIndex1_ptr +
+                                                            freeCache_sz;// &(Partials[it].freePointIndex[0.5 * freeCache_sz]);
+
+                                      float *fp_beam_ptr = fp_beam.data().begin();
+
+                                      int updateFp_cnt = 0;
+                                      for (int i = 0; i < fp_sz; i++) {
+                                          int px = int(round(fp_beam_ptr[i] * 20.0f));
+                                          int py = int(round(fp_beam_ptr[i + fp_sz] * 20.0f));
+                                          // get q from cache map
+                                          float q = global_map(px, py);
+
+//                                          std::cout << "q: " << q << std::endl;
+                                          // check q value 1. q = 0, not valid , get default value from global map
+                                          if (q == 0.0) {
+                                              q = cell_q[int(global_map_cell(px, py))];
+//                                              std::cout << "px: " << px << ", py: " << py << std::endl;
+//                                              std::cout << "update q: " << q <<"," << int(global_map_cell(200, 200))<<std::endl;
+                                              old_global_map(px, py) = q;
+
+                                          }
+//                                          std::cout << "i = " << i <<", q1 = " << q << std::endl;
+//                                          mat_update.at<char>(px, py) = 255;
+
+//                                          // skip update rule
+//                                          if (q > 0.0) {
+//                                              freeQPtr[updateFp_cnt] = q;
+//                                              freeIndex1_ptr[updateFp_cnt] = px;
+//                                              freeIndex2_ptr[updateFp_cnt] = py;
+//                                              freeQ_Ptr[updateFp_cnt] = 1 - q;
+//                                              updateFp_cnt++;
+//
+//                                          }
+
+
+                                          freeQPtr[i] = q;
+                                          freeIndex1_ptr[i] = px;
+                                          freeIndex2_ptr[i] = py;
+                                          freeQ_Ptr[i] = 1 - q;
+                                      }
+
+                                      //compute Q = Q * B
+
+                                      for (int i = 0; i < fp_sz; i++) {
+                                          float q1 = freeQPtr[i] * B01;
+//                                          std::cout << "i = " << i <<", q1 = " << q1 << std::endl;
+                                          freeQPtr[i] = q1 / (freeQ_Ptr[i] * B00 + q1);
+
+//                                          std::cout << "i = " << i <<", freeQPtr[i] = " << freeQPtr[i] << std::endl;
+
+                                      }
+                                      // update global map
+                                      for (int i = 0; i < fp_sz; i++) {
+
+                                          global_map(freeIndex1_ptr[i], freeIndex2_ptr[i]) = freeQPtr[i];
+//                                          mat_update.at<char>(freeIndex1_ptr[i], freeIndex2_ptr[i]) = 0;
+
+                                      }
+
+
+
+//
+// Update Hit cell
+
+                                      size_t op_sz = op.size2();
+
+                                      // resize vector
+                                      if (op_sz > Partials[it].occuPointQ.size()) {
+                                          Partials[it].occuPointIndex.resize(op_sz * 2);
+                                          Partials[it].occuPointQ.resize(op_sz);
+                                          Partials[it].occuPointQ_.resize(op_sz);
+
+                                      }
+
+                                      size_t occuCache_sz = 0.5 * Partials[it].occuPointIndex.size();
+
+                                      //get pointer
+                                      float *occuQPtr = &(Partials[it].occuPointQ[0]);
+                                      float *occuQ_Ptr = &(Partials[it].occuPointQ_[0]);
+                                      int *occuIndex1_ptr = &(Partials[it].occuPointIndex[0]);
+                                      int *occuIndex2_ptr = occuIndex1_ptr +
+                                                            occuCache_sz;// &(Partials[it].occuPointIndex[0.5 * occuCache_sz]);
+
+                                      float *op_beam_ptr = op_beam.data().begin();
+
+
+                                      for (int i = 0; i < op_sz; i++) {
+                                          // get q from cache map
+                                          int px = int(round(op_beam_ptr[i] * 20.0f));
+                                          int py = int(round(op_beam_ptr[i + op_sz] * 20.0f));
+//                                          int(round( op_beam_ptr[i]* 20.0f));
+                                          float q = global_map(px, py);
+
+                                          // check q value 1. q = 0, not valid , get default value from global map
+                                          if (q == 0) {
+                                              q = cell_q[global_map_cell(px, py)];
+                                              old_global_map(px, py) = q;
+
+                                          }
+
+                                          occuQPtr[i] = q;
+                                          occuQ_Ptr[i] = 1 - q;
+
+                                          occuIndex1_ptr[i] = px;
+                                          occuIndex2_ptr[i] = py;
+
+//                                          Partials[it].occuPointIndex[i] = px;
+//                                          Partials[it].occuPointIndex[i + size_t(0.5*occuCache_sz)] = py;
+
+
+//                                          std::cout << occuIndex1_ptr[i] <<"," << occuIndex2_ptr[i] << ",";
+
+//                                          std::cout << px <<",";
+//                                          mat_update.at<char>(px, py) = 255;
+
+
+
+                                      }
+
+                                      // compute Q
+
+
+#pragma omp simd
+                                      for (int i = 0; i < op_sz; i++) {
+                                          float q1 = occuQPtr[i] * B11;
+
+
+                                          occuQPtr[i] = q1 / (occuQ_Ptr[i] * B10 + q1);
+
+                                      }
+
+                                      for (int i = 0; i < op_sz; i++) {
+
+                                          global_map(occuIndex1_ptr[i], occuIndex2_ptr[i]) = occuQPtr[i];
+//                                          mat_update.at<char>(occuIndex1_ptr[i], occuIndex2_ptr[i]) = 255;
+
+                                      }
+
+
+
+
+
+
+                                      // =================
+                                      // Q = Q * A
+
+//                                      std::valarray<int> erase_index1(1000 * 2);
+//                                      std::valarray<int> erase_index2(1000 * 2);
+//                                      Partials[it].erase_index1.resize(2000);
+//                                      Partials[it].erase_index2.resize(2000);
+                                      int *erase_index1_ptr = &(Partials[it].erase_index1[0]);
+                                      int *erase_index2_ptr = &(Partials[it].erase_index2[0]);
+
+                                      int remove_cnt = 0;
+
+
+                                      Partials[it].reset_m_chnage_cell_cnt();
+
+                                      int *cell_change_cnt_ptr = &(Partials[it].m_chnage_cell_cnt[0]);
+                                      // there may be too many point
+                                      // how to avoid useless computation
+
+#if 1
+                                      float forward_prob[20 * 20 * 30 * 30];
+
+                                      for (auto it1 = global_map.begin1(); it1 != global_map.end1(); it1++) {
+                                          for (auto it2 = it1.begin(); it2 != it1.end(); it2++) {
+                                              float old_q = *it2;
+                                              float update_q = 0;
+                                              int cell_type = global_map_cell(it2.index1(), it2.index2());
+
+//                                              std::cout << "cell_type " << cell_type << " , q = " << old_q << std::endl;
+                                              // update
+                                              if (0 == cell_type) {
+#if 0
+                                                  if (old_q - round(old_q) < bypass_free_q)
+                                                      *it2 = limit_free_q;
+                                                  else
+                                                      *it2 = (1 - old_q) * freeA01 + old_q * freeA11;
+
+#endif
+
+
+                                                  *it2 = (1 - old_q) * freeA01 + old_q * freeA11;
+
+//                                                  std::cout << *it2 << "|";
+                                                  if (old_global_map(it2.index1(), it2.index2()) <= 0.5) {
+                                                      // count ++
+                                                      if (*it2 <= 0.5) {
+                                                          // 0-0
+                                                          cell_change_cnt_ptr[0]++;
+                                                      } else {
+                                                          // 0-1
+                                                          cell_change_cnt_ptr[1]++;
+
+                                                      }
+                                                  } else {
+                                                      // count ++
+                                                      if (*it2 <= 0.5) {
+                                                          // 1-0
+                                                          cell_change_cnt_ptr[3]++;
+
+                                                      } else {
+                                                          // 1-1
+                                                          cell_change_cnt_ptr[2]++;
+
+                                                      }
+                                                  }
+
+                                              } else if (1 == cell_type) {
+                                                  *it2 = (1 - old_q) * occuA01 + old_q * occuA11;
+                                                  if (old_global_map(it2.index1(), it2.index2()) <= 0.5) {
+                                                      // count ++
+                                                      if (*it2 <= 0.5) {
+                                                          // 0-0
+                                                          cell_change_cnt_ptr[4]++;
+
+                                                      } else {
+                                                          // 0-1
+                                                          cell_change_cnt_ptr[5]++;
+
+                                                      }
+                                                  } else {
+                                                      // count ++
+                                                      if (*it2 <= 0.5) {
+                                                          // 1-0
+                                                          cell_change_cnt_ptr[7]++;
+
+                                                      } else {
+                                                          // 1-1
+                                                          cell_change_cnt_ptr[6]++;
+
+                                                      }
+                                                  }
+
+                                              } else if (2 == cell_type) {
+                                                  *it2 = (1 - old_q) * dynaA01 + old_q * dynaA11;
+//                                                  std::cout << "~ "<< *it2 << std::endl;
+
+                                                  if (old_global_map(it2.index1(), it2.index2()) <= 0.5) {
+                                                      // count ++
+                                                      if (*it2 <= 0.5) {
+                                                          // 0-0
+                                                          cell_change_cnt_ptr[8]++;
+
+                                                      } else {
+                                                          // 0-1
+                                                          cell_change_cnt_ptr[9]++;
+
+                                                      }
+                                                  } else {
+                                                      // count ++
+                                                      if (*it2 < 0.5) {
+                                                          // 1-0
+                                                          cell_change_cnt_ptr[11]++;
+
+                                                      } else {
+                                                          cell_change_cnt_ptr[10]++;
+                                                          // 1-1
+
+                                                      }
+                                                  }
+                                              }
+
+#if 0
+                                              if (0 == old_q){
+                                                      *it2 = freeAlut(old_q);
+                                                  }else if(1 == old_q){
+                                                      *it2 = occuAlut(old_q);
+                                                  }else if(2 == old_q){
+                                                      *it2 = dynaAlut(old_q);
+                                                  }
+#endif
+
+                                              // count chnage
+
+
+
+
+                                              // erase
+                                              // if not update in Q = Q * B
+                                              // then it may be unchanged
+#if 1
+//                                              std::cout << "\nerase:\n";
+//                                              std::cout << *it2 << "," << old_q << it2.index1() << "," <<it2.index2() << std::endl;
+
+                                              if (remove_cnt < 1999 && fabs(*it2 - old_q) < 0.001) {
+
+                                                  erase_index1_ptr[remove_cnt] = it2.index1();
+
+                                                  erase_index2_ptr[remove_cnt] = it2.index2();
+//                                                  std::cout << "==erase: " <<*it2 << "," << old_q << it2.index1() << "," <<it2.index2() << std::endl;
+
+                                                  remove_cnt++;
+                                              }
+//                                              std::cout << "\nerase:\n" << std::endl;
+
+
+#endif
+
+
+                                          }
+                                      }
+
+#if 0
+                                      for (int i = 0; i < 2000; i++) {
+
+                                          global_map.erase_element(erase_index1_ptr[i],erase_index2_ptr[i]);
+
+                                      }
+#endif
+
+#endif
+
+
+                                  }
+                              });
+
+
+            t1.stop();
+
+            std::cout << "loop done  time: " << t1.elapsedSeconds() << std::endl;
+////////
+
+
+/////////
+            /*
+             * how to define update prob
+             * cell count shoudn't be too big
+             *
+             *  how to compute 0.2^34 * 0.6^123
+             *
+             *
+             *
+             * */
+
+
+            auto min_change_cnt = Partials[0].m_chnage_cell_cnt;
+
+
+            // find max weight
+            // find min exp factor
+            float min_change_prob = Partials[0].m_normal_change_cell_prob;
+            int best_id = 0;
+
+            std::cout << "\n====check cnt";
+            for (int i = 0; i < Partials.size(); i++) {
+
+                for (int j = 0; j < 12; j++) {
+                    if (min_change_cnt[j] > Partials[i].m_chnage_cell_cnt[j]) {
+                        min_change_cnt[j] = Partials[i].m_chnage_cell_cnt[j];
+                    }
+                }
+
+            }
+            std::cout << "min_change_cnt" << std::endl;
+
+            for (auto i : min_change_cnt) {
+                std::cout << i << ",";
+            }
+            std::cout << std::endl;
+
+            for (int i = 0; i < Partials.size(); i++) {
+
+                for (int j = 0; j < 12; j++) {
+                    Partials[i].m_chnage_cell_cnt[j] -= min_change_cnt[j];
+                }
+
+            }
+//            std::cout << "\n check map update weight:\n";
+            mp_util::mp_float allweight = 0.0;
+            for (int i = 0; i < Partials.size(); i++) {
+
+
+                mp_util::mp_float &partail_weight = Partials[i].map_weight;
+                partail_weight = 1.0;
+                for (int j = 0; j < 12; j++) {
+                    auto exp = Partials[i].m_chnage_cell_cnt[j];
+                    if (exp != 0) {
+                        auto p = mp_util::mp_pow(change_prob[j], exp);
+                        partail_weight.prod_mpf(p);
+                    }
+//                    std::cout << Partials[i].m_chnage_cell_cnt[j]<< ",";
+                }
+                allweight.add_mpf(partail_weight);
+            }
+
+            std::cout << "\n======all weight: ";
+            allweight.print();
+            std::cout << "\n======partial weight: ";
+
+            for (int i = 0; i < Partials.size(); i++) {
+
+
+                mp_util::mp_float &partail_weight = Partials[i].map_weight;
+                partail_weight.devide_mpf(allweight);
+                std::cout << "\ni:" << i << ", ";
+                partail_weight.print();
+                std::cout << ",m_chnage_cell_cnt: ";
+
+                for (int j = 0; j < 12; j++) {
+                    std::cout << Partials[i].m_chnage_cell_cnt[j] << ", ";
+                }
+                std::cout << "\n";
+
+            }
+
+            best_id = 0;
+            auto best_weight = Partials[0].map_weight;
+            for (int i = 0; i < Partials.size(); i++) {
+                if (Partials[i].map_weight > best_weight) {
+                    best_weight = Partials[i].map_weight;
+                    best_id = i;
+                }
+            }
+            //todo:bypass
+            best_id = 66;
+            std::cout << "best id :" << best_id;
+            std::cout << "pose:\nx: " << Partials[best_id].map_laser_pose.getX() << " y: "
+                      << Partials[best_id].map_laser_pose.getY()
+                      << " yaw: " << Partials[best_id].map_laser_pose.getYaw() << std::endl;
+
+            std::cout << "best weight: ";
+            Partials[best_id].map_weight.print();
+            if (Partials[best_id].map_weight > global_best_weight) {
+                global_best_weight = Partials[best_id].map_weight;
+                //global_enable_match = true;
+                final_pose.pose.position.x = Partials[best_id].map_laser_pose.getX();
+                final_pose.pose.position.y = Partials[best_id].map_laser_pose.getY();
+
+                tf::quaternionTFToMsg(tf::createQuaternionFromYaw(Partials[best_id].map_laser_pose.getYaw()),
+                                      final_pose.pose.orientation);
+
+            } else {
+                // global_enable_match = false;
+
+            }
+            final_pose.header.stamp = ros::Time::now();
+//        cv::imshow("laser", mat);
+//        cv::imshow("laser", mat);
+
+//        cv::imshow("mat_dynamic", mat_dynamic);
+            final_pose_pub.publish(final_pose);
+            (*initialpose_ptr).pose.pose = final_pose.pose;
+
+            //            mat = cv::Scalar(0);
+            ublas::compressed_matrix<float> &global_map = Partials[best_id].global_map;
+
+            for (auto it1 = global_map.begin1(); it1 != global_map.end1(); it1++) {
+                for (auto it2 = it1.begin(); it2 != it1.end(); it2++) {
+
+//                    std::cout << "q = " << *it2 << ",[ " << it2.index1() << ", " << it2.index2() << std::endl;
+
+                    if (*it2 <= 0.5) {
+                        mat_update.at<char>(it2.index1(), it2.index2()) = 0;
+                    }
+                    if (*it2 > 0.5) {
+                        mat_update.at<char>(it2.index1(), it2.index2()) = 255;
+                    }
+                }
+            }
+
+
+            m_map.data.clear();
+            for (int i = m_map.info.width - 1; i >= 0; i--) {
+                for (size_t j = 0; j < m_map.info.height; j++) {
+                    signed int d = mat.at<uchar>(i, j);
+                    auto e = d;
+//                    std::cout << "idx: " << i << ", " << j << " = " << d << std::endl;
+                    if (d == 0) {
+                        e = 0;
+                    } else if (d == 100) {
+                        e = -1;
+                    } else if (d == 255) {
+                        e = 100;
+                    }
+                    if (d == 150) {
+                        e = 0;
+                    }
+
+                    signed int dl = mat_update.at<uchar>(i, j);
+                    if (dl == 0)
+                        e = 0;
+                    if (dl == 255)
+                        e = 100;
+
+                    m_map.data.emplace_back(e);
+                }
+            }
+            m_map.header.stamp = ros::Time::now();
+
+            map_pub.publish(m_map);
+
+//            exit(0);
+//            cv::waitKey(1);
+
+        }
+
+    }
+
+
+
+
 //    std::cout << "get data\n" << m_scan.getXsYsMatrix_ublas() << std::endl;
     node.getOneMsg("/initialpose", -1);
 
-    mp_util::mp_float global_best_weight = 0.0;
     std::vector<float> js(40);
     std::iota(js.begin(), js.end(), -20);
 
@@ -843,6 +1590,7 @@ int main(int argc, char **argv) {
         std::vector<Partial> Partials(1000);
 
 
+        //todo:create partial
 #pragma omp simd
         for (int i = 0; i < 1000; i++) {
             ublas_util::Transformation2d map_laser_beam(gen_x(rng), gen_y(rng), gen_yaw(rng));
@@ -889,11 +1637,11 @@ int main(int argc, char **argv) {
 //    std::cout << "get data\n" << laser_grid.getOccuPointsMat_ublas() << std::endl;
 
         auto fp = laser_grid.getFreePointsMat_ublas();
-        auto fp2 = laser_grid.getFreePointsMat();
+//        auto fp2 = laser_grid.getFreePointsMat();
         auto op = laser_grid.getOccuPointsMat_ublas();
         // check cv mat
         cv::Mat mat_dynamic(400, 400, CV_8UC1, cv::Scalar(0));
-//    cv::Mat mat_pritial(400,400, CV_8UC1, cv::Scalar(0));
+        cv::Mat mat_pritial(400, 400, CV_8UC1, cv::Scalar(0));
 
 
 
@@ -1138,8 +1886,6 @@ int main(int argc, char **argv) {
                                       }
 
 #endif
-
-
 
 
                                   }
