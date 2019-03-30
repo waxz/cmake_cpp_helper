@@ -39,9 +39,10 @@ namespace grid_util {
 
         m_scan.RangesVal() -= m_contour_offset;
 
-        auto laserPoints = m_scan.getXsYsMatrix();
-        laserPoints = LeftUpOrigin.inverse() * laserPoints;
-
+        auto laserPoints_contour = m_scan.getXsYsMatrix();
+        laserPoints_contour = LeftUpOrigin.inverse() * laserPoints_contour;
+        occuPointsMat = LeftUpOrigin.inverse() * occuPointsMat;
+//        laserPoints = LeftUpOrigin.inverse() * laserPoints;
         std::vector<std::vector<cv::Point>> contours;
         contours.clear();
         std::vector<cv::Point> contour;
@@ -52,13 +53,14 @@ namespace grid_util {
         size_t px = 0, py = 0;
 
 
-        for (int i = 0; i < laserPoints.cols(); i++) {
-            px = static_cast<size_t>(laserPoints(1, i) / m_grid_resolution);
+        // todo: remove single point
+        for (int i = 0; i < laserPoints_contour.cols(); i++) {
+            px = static_cast<size_t>(laserPoints_contour(1, i) / m_grid_resolution);
             p.x = clip(px, 0 * m_length, 2 * m_length - 1);
 //
 //  p.y = static_cast<size_t>();
 
-            py = static_cast<size_t>(laserPoints(0, i) / m_grid_resolution);
+            py = static_cast<size_t>(laserPoints_contour(0, i) / m_grid_resolution);
             p.y = clip(py, 0 * m_length, 2 * m_length - 1);
             contour.push_back(p);
             (*m_grid).at<signed char>(p) = 100;
@@ -70,6 +72,16 @@ namespace grid_util {
         cv::Scalar free_lable(1);
 
         cv::drawContours(*m_grid, contours, 0, free_lable, CV_FILLED); // 0: index of contours,
+#if 1
+        for (int i = 0; i < occuPointsMat.cols(); i++) {
+            px = static_cast<size_t>(occuPointsMat(1, i) / m_grid_resolution);
+            p.x = clip(px, 0 * m_length, 2 * m_length - 1);
+            py = static_cast<size_t>(occuPointsMat(0, i) / m_grid_resolution);
+            p.y = clip(py, 0 * m_length, 2 * m_length - 1);
+            (*m_grid).at<signed char>(p) = 100;
+//            std::cout << "~" << std::endl;
+        }
+#endif
         cv::Rect rect = boundingRect(contours[0]);
         size_t left = rect.x;
         size_t top = rect.y;
@@ -119,15 +131,27 @@ namespace grid_util {
 #endif
 
         // vector to ublas array
-        freePointsMat_ublas = ublas::scalar_matrix<float>(3, freePointsX.size(), 1);
+        ublas::matrix<float> freePointsMat_ublas_ = ublas::scalar_matrix<float>(3, freePointsX.size(), 1);
+        freePointsMat_ublas = freePointsMat_ublas_;
 
-        std::copy(std::begin(freePointsX), std::end(freePointsX), freePointsMat_ublas.begin2() + 0);
+        std::copy(std::begin(freePointsX), std::end(freePointsX), freePointsMat_ublas_.begin2() + 0);
 
-        std::copy(std::begin(freePointsY), std::end(freePointsY), freePointsMat_ublas.begin2() + freePointsX.size());
+        std::copy(std::begin(freePointsY), std::end(freePointsY), freePointsMat_ublas_.begin2() + freePointsX.size());
+#if 1
+        for (int i = 0; i < freePointsMat_ublas_.size2(); i++) {
+            px = static_cast<size_t>(freePointsMat_ublas_(1, i) / m_grid_resolution);
+            p.x = clip(px, 0 * m_length, 2 * m_length - 1);
+            py = static_cast<size_t>(freePointsMat_ublas_(0, i) / m_grid_resolution);
+            p.y = clip(py, 0 * m_length, 2 * m_length - 1);
+            (*m_grid).at<signed char>(p) = 0;
+//            std::cout << "~" << std::endl;
+        }
+#endif
+        cv::imshow("debug", *m_grid);
 
+        ublas::noalias(freePointsMat_ublas) = ublas::prod(LeftUpOrigin_ublas.matrix(), freePointsMat_ublas_);
 
-        ublas::noalias(freePointsMat_ublas) = ublas::prod(LeftUpOrigin_ublas.matrix(), freePointsMat_ublas);
-
+        std::cout << "~~~~sz: " << freePointsX.size() << "m sz: " << freePointsMat_ublas.size2() << std::endl;
 
     }
 

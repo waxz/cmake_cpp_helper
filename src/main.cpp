@@ -364,6 +364,9 @@ struct Partial {
     std::vector<float> freePointQ_;
     // store update Q
     ublas::compressed_matrix<float> global_map;
+    ublas::compressed_matrix<float> old_global_map;
+    ublas::compressed_matrix<float> current_global_map;
+
     // store cell type
     ublas::compressed_matrix<char> global_map_cell;
 
@@ -388,10 +391,11 @@ struct Partial {
 
 
     Partial() : minv_beam(ublas::matrix<float>(3, 3)), mp_weight(1.0),
-                P(1000 * 20 * 2), Q(0.0f, 1000 * 20), Q_(0.0f, 1000 * 20), m_chnage_cell_cnt(0, 12),
+                P(1000 * 20 * 2), Q(0.0f, 1000 * 20), Q_(0.0f, 1000 * 20), m_chnage_cell_cnt(0, 50),
                 m_change_cell_prob(0.0, 12),
-                global_map(600, 600, 600 * 600),
-                erase_index1(2000), erase_index2(2000), m_map_update_weight(0.0) {
+                global_map(300, 300, 300 * 300), old_global_map(300, 300, 300 * 300),
+                current_global_map(300, 300, 300 * 300),
+                erase_index1(2000), erase_index2(2000), m_map_update_weight(0.0), map_weight(1.0) {
 
     };
 
@@ -637,27 +641,7 @@ int main(int argc, char **argv) {
     exit(3);
 #endif
 
-    int szz = 800;
-    std::vector<int> tv(szz * 2);
 
-    int *tvp1 = &(tv[0]);
-    int *tvp2 = &(tv[size_t(szz)]);
-
-    for (int i = 0; i < szz; i++) {
-        tvp1[i] = i;
-        tvp2[i] = i;
-        std::cout << tvp1[i] << "," << tvp2[i] << ".";
-
-    }
-    std::cout << std::endl;
-
-    for (int i = 0; i < szz; i++) {
-        std::cout << tvp1[i] << "," << tvp2[i] << ".";
-
-    }
-
-
-    std::cout << std::endl;
 
 
     GaussLUT glt(0.0, 0.5, 0.6, 100);
@@ -689,6 +673,160 @@ int main(int argc, char **argv) {
 
 //    test_main();
 //    exit(3);
+
+    //todo: test Q, A, B
+    // Hmm data
+    //========================
+    // A cell value
+    // A0 free
+    float freeA01 = 0.2;
+    float freeA11 = 0.6;
+    ALut freeAlut(freeA01, 1 - freeA11, 0.001);
+
+
+    // A1 occu
+    float occuA01 = 0.4;
+    float occuA11 = 0.8;
+    ALut occuAlut(occuA01, 1 - occuA11, 0.001);
+
+    // A2 dynamic
+
+    float dynaA01 = 0.4;
+    float dynaA11 = 0.6;
+    ALut dynaAlut(dynaA01, 1 - dynaA11, 0.001);
+
+
+    //========================
+    // B value
+    float B00 = 0.6;
+    float B01 = 0.35;
+
+    float B10 = 0.35;
+    float B11 = 0.6;
+
+    BLut missBlut(B00, B01, 0.001);
+    BLut hitBlut(B10, B11, 0.001);
+
+    // todo: change_prob
+    // free 0-0,0-1,1-1,1-0
+    // occu 0-0,0-1,1-1,1-0
+    // dyna 0-0,0-1,1-1,1-0
+    std::valarray<float> change_prob(12);
+    change_prob[0] = 1 - freeA01;
+    change_prob[1] = freeA01;
+    change_prob[2] = freeA11;
+    change_prob[3] = 1 - freeA11;
+    change_prob[4] = 1 - occuA01;
+    change_prob[5] = occuA01;
+    change_prob[6] = occuA11;
+    change_prob[7] = 1 - occuA11;
+    change_prob[8] = 1 - dynaA01;
+    change_prob[9] = dynaA01;
+    change_prob[10] = dynaA11;
+    change_prob[11] = 1 - dynaA11;
+
+    float bypass_free_q = 0.033719;
+    float limit_free_q = 0.2112;
+#if 0
+
+    {
+
+        // condition 1
+        // free cell get hit, q --> 0.55
+        // free cell get miss, q --> 0.1
+
+        //Q = Q * A * B
+        double w = 1.0;
+
+        std::cout << "free cell get hit, q --> 0.55\n";
+        float q = 0.5;
+        for(int i = 0;i < 20; i++){
+
+            q = hitBlut(q);
+
+            std::cout << q << ",";
+            q = freeAlut(q);
+
+            std::cout << q << "\n";
+
+        }
+        std::cout << "free cell get miss, q --> 0.1\n";
+
+        for(int i = 0;i < 20; i++){
+
+            q = missBlut(q);
+
+            std::cout << q << ",";
+            q = freeAlut(q);
+
+            std::cout << q << "\n";
+
+        }
+        std::cout << "occu cell get miss, q --> 0.45\n";
+
+        q = 0.5;
+        for(int i = 0;i < 20; i++){
+
+            q = missBlut(q);
+
+            std::cout << q << ",";
+            q = occuAlut(q);
+
+            std::cout << q << "\n";
+
+        }
+        std::cout << "occu cell get hit, q --> 0.9\n";
+        w = 1.0;
+
+        for(int i = 0;i < 20; i++){
+
+            q = hitBlut(q);
+
+            std::cout << q << ",";
+            q = occuAlut(q);
+
+            std::cout << q << "\n";
+            w *= q;
+
+        }
+        std::cout << "w: " << w << "\n";
+
+        std::cout << "dyna cell get hit, q --> 0.55\n";
+
+        q = 0.5;
+        w = 1.0;
+        for(int i = 0;i < 20; i++){
+
+            q = hitBlut(q);
+
+            std::cout << q << ",";
+            q = dynaAlut(q);
+            q = dynaAlut(q);
+
+            std::cout << q << "\n";
+            w *= q;
+
+        }
+        std::cout << "w: " << w << "\n";
+        std::cout << "dyna cell get miss, q --> 0.45\n";
+
+        q = 0.5;
+        for(int i = 0;i < 20; i++){
+
+            q = missBlut(q);
+
+            std::cout << q << ",";
+            q = dynaAlut(q);
+            q = dynaAlut(q);
+
+            std::cout << q << "\n";
+
+        }
+        exit(9);
+    }
+#endif
+
+
 
     ublas_util::Transformation2d trans(0.5, 0.2, 0.5 * M_PI);
 
@@ -733,23 +871,27 @@ int main(int argc, char **argv) {
 
     //===========
     // create map
-    grid_util::LaserGrid laser_grid(0.03);
+    float map_resolution = 0.1;
+    float map_resolution_scale = 1.0 / map_resolution;
+
+    grid_util::LaserGrid laser_grid(0.05);
 
     ros_util::LaserScan m_scan;
     // 3. map grid
-    grid_util::MapGrid map_grid(0.05, 30.0);
+    grid_util::MapGrid map_grid(map_resolution, 30.0);
     map_grid.setOrigin(-15.0, -15.0, 0.0);
     auto map_origin = map_grid.getgetOriginMatrix_ublas();
     ublas_util::Transformation2d map_laser(0, 0, 0.0 * M_PI);
-    cv::Mat mat(600, 600, CV_8UC1, cv::Scalar(100));
-    cv::Mat mat_update(600, 600, CV_8UC1, cv::Scalar(100));
+    cv::Mat mat(int(30 / map_resolution), int(30 / map_resolution), CV_8UC1, cv::Scalar(100));
+    cv::Mat mat_update(int(30 / map_resolution), int(30 / map_resolution), CV_8UC1, cv::Scalar(100));
 
-    laser_grid.setContour_Offset(0.08);
+    laser_grid.setContour_Offset(0.05);
     auto map_origin_inverse = map_origin.inverse();
     ublas::matrix<float> minv = ublas::prod(map_origin_inverse, map_laser.matrix());
     mp_util::mp_float global_best_weight = 0.0;
 
 
+    std::cout << "start record laser scan" << std::endl;
     for (int i = 0; i < 40; i++) {
 
         node.getOneMsg("/scan", -1);
@@ -769,14 +911,14 @@ int main(int argc, char **argv) {
 
 
         for (size_t j = 0; j < fp1.size2(); j++) {
-            cv::Point p(round(fp1(1, j) * 20), round(fp1(0, j) * 20));
+            cv::Point p(int(fp1(1, j) * map_resolution_scale), int(fp1(0, j) * map_resolution_scale));
             p.x = std::clip(p.x, 0, mat.cols);
             p.y = std::clip(p.y, 0, mat.rows);
             mat.at<uchar>(p) = 0;
 
         }
         for (size_t j = 0; j < op1.size2(); j++) {
-            cv::Point p(round(op1(1, j) * 20), round(op1(0, j) * 20));
+            cv::Point p(int(op1(1, j) * map_resolution_scale), int(op1(0, j) * map_resolution_scale));
 
             p.x = std::clip(p.x, 0, mat.cols);
 
@@ -784,13 +926,15 @@ int main(int argc, char **argv) {
             mat.at<uchar>(p) = 255;
 
         }
-        mat(cv::Range(220, 365), cv::Range(220, 290)) = cv::Scalar(0);
+        std::cout << "start fix laser scan" << std::endl;
 
-        cv::line(mat, cv::Point(220, 220), cv::Point(220, 365), cv::Scalar(255));
-        cv::line(mat, cv::Point(220, 220), cv::Point(330, 220), cv::Scalar(255));
-        cv::line(mat, cv::Point(220, 365), cv::Point(270, 365), cv::Scalar(255));
+        mat(cv::Range(220 / 2, 365 / 2), cv::Range(220 / 2, 290 / 2)) = cv::Scalar(0);
 
-        mat(cv::Range(230, 350), cv::Range(230, 380)) = cv::Scalar(150);
+        cv::line(mat, cv::Point(220 / 2, 220 / 2), cv::Point(220 / 2, 365 / 2), cv::Scalar(255));
+        cv::line(mat, cv::Point(220 / 2, 220 / 2), cv::Point(330 / 2, 220 / 2), cv::Scalar(255));
+        cv::line(mat, cv::Point(220 / 2, 365 / 2), cv::Point(270 / 2, 365 / 2), cv::Scalar(255));
+
+        mat(cv::Range(230 / 2, 350 / 2), cv::Range(230 / 2, 380 / 2)) = cv::Scalar(150);
 
         cv::imshow("laser", mat);
 
@@ -805,7 +949,7 @@ int main(int argc, char **argv) {
 
     m_map.info.width = mat.cols;
     m_map.info.height = mat.rows;
-    m_map.info.resolution = 0.05;
+    m_map.info.resolution = map_resolution;
     m_map.data.clear();
     m_map.info.origin.position.x = -15;
     m_map.info.origin.position.y = -15;
@@ -831,7 +975,7 @@ int main(int argc, char **argv) {
 
         boost::random::normal_distribution<> gen_x(0.0, 0.15);
         boost::random::normal_distribution<> gen_y(0.0, 0.15);
-        boost::random::normal_distribution<> gen_yaw(0.0, 0.05);
+        boost::random::normal_distribution<> gen_yaw(0.0, 0.15);
 
         Partials[0].minv_beam = minv;
 
@@ -839,111 +983,35 @@ int main(int argc, char **argv) {
         //global data
         // store cell type
         // todo:create matrix from map
-        ublas::compressed_matrix<char> global_map_cell(600, 600, 600 * 600);
+        // todo: change matrix resolution
+        // map sesolution 0.05 --> stste resolution 0.05 * 2
+        float state_map_resolution = 2;
+        float state_map_scale = 10.0;
+        ublas::compressed_matrix<char> global_map_cell(300, 300, 300 * 300);
         for (int i = 0; i < mat.rows; i++) {
             for (int j = 0; j < mat.cols; j++) {
                 if (mat.at<uchar>(i, j) == 150 || mat.at<uchar>(i, j) == 100) {
-                    global_map_cell(i, j) = 2;
+                    global_map_cell(int(i), int(j)) = 2;
 
                 }
+
+            }
+        }
+        for (int i = 0; i < mat.rows; i++) {
+            for (int j = 0; j < mat.cols; j++) {
+
                 if (mat.at<uchar>(i, j) == 255) {
 
-                    global_map_cell(i, j) = 1;
+                    global_map_cell(int(i), int(j)) = 1;
                 }
             }
         }
+
         std::cout << "start update 22 " << std::endl;
 
         std::array<float, 3> cell_q = {0.333, 0.666, 0.5};
 
-        // Hmm data
-        //========================
-        // A cell value
-        // A0 free
-        float freeA01 = 0.2;
-        float freeA11 = 0.6;
-        ALut freeAlut(freeA01, 1 - freeA11, 0.001);
 
-
-        // A1 occu
-        float occuA01 = 0.4;
-        float occuA11 = 0.8;
-        ALut occuAlut(occuA01, 1 - occuA11, 0.001);
-
-        // A2 dynamic
-
-        float dynaA01 = 0.4;
-        float dynaA11 = 0.6;
-        ALut dynaAlut(dynaA01, 1 - dynaA11, 0.001);
-
-
-        //========================
-        // B value
-        float B00 = 0.9;
-        float B01 = 0.1;
-
-        float B10 = 0.1;
-        float B11 = 0.95;
-
-        BLut missBlut(0.9, 0.1, 0.001);
-        BLut hitBlut(0.1, 0.9, 0.001);
-
-        // todo: change_prob
-        // free 0-0,0-1,1-1,1-0
-        // occu 0-0,0-1,1-1,1-0
-        // dyna 0-0,0-1,1-1,1-0
-        std::valarray<float> change_prob(12);
-        change_prob[0] = 1 - freeA01;
-        change_prob[1] = freeA01;
-        change_prob[2] = freeA11;
-        change_prob[3] = 1 - freeA11;
-        change_prob[4] = 1 - occuA01;
-        change_prob[5] = occuA01;
-        change_prob[6] = occuA11;
-        change_prob[7] = 1 - occuA11;
-        change_prob[8] = 1 - dynaA01;
-        change_prob[9] = dynaA01;
-        change_prob[10] = dynaA11;
-        change_prob[11] = 1 - dynaA11;
-
-        float bypass_free_q = 0.033719;
-        float limit_free_q = 0.2112;
-#if 0
-
-        {
-
-            float q = 0.5;
-            for(int i = 0;i < 20; i++){
-
-                q = hitBlut(q);
-
-                std::cout << q << ",";
-                q = freeAlut(q);
-                std::cout << q << "\n";
-
-            }
-            std::cout << "\n A\n";
-            for(int i = 0;i < 20; i++){
-
-
-                std::cout << q << ",";
-                q = freeAlut(q);
-                std::cout << q << "\n";
-
-            }
-            q = 0.0288567;
-            for(int i = 0;i < 20; i++){
-
-                q = hitBlut(q);
-
-                std::cout << q << ",";
-                q = freeAlut(q);
-                std::cout << q << "\n";
-
-            }
-            exit(9);
-        }
-#endif
 
         std::cout << "start loop " << std::endl;
         bool g = node.getOneMsg("/initialpose", -0.1);
@@ -966,8 +1034,8 @@ int main(int argc, char **argv) {
                         tf::getYaw(initialpose.pose.pose.orientation) + map_laser_beam.getYaw()), p.orientation);
 
                 map_laser_beam.set(p.position.x, p.position.y, tf::getYaw(p.orientation));
-                if (i == 110) {
-                    map_laser_beam.set(0, 0, 0);
+                if (i == 199) {
+                    map_laser_beam.set(0.02, 0.02, 0.003);
                 }
                 Partials[i].map_laser_pose = map_laser_beam;
 
@@ -983,6 +1051,8 @@ int main(int argc, char **argv) {
             partial_cloud.header.stamp = ros::Time::now();
             partial_cloud_pub.publish(partial_cloud);
         }
+
+        int loop_cnt = 0;
 
         while (ros::ok()) {
             bool g = node.getOneMsg("/initialpose", 0.01);
@@ -1020,8 +1090,10 @@ int main(int argc, char **argv) {
                                   for (auto it = r.begin(); it < r.end(); it++) {
                                       // get copy of local map
                                       ublas::compressed_matrix<float> &global_map = Partials[it].global_map;
-                                      auto old_global_map = global_map;
+                                      ublas::compressed_matrix<float> &old_global_map = Partials[it].old_global_map;
 
+                                      ublas::compressed_matrix<float> &current_global_map = Partials[it].current_global_map;
+                                      current_global_map = global_map;
                                       ublas::matrix<float> op_beam = op;
                                       ublas::noalias(op_beam) = ublas::prod(Partials[it].minv_beam, op);
 
@@ -1054,10 +1126,10 @@ int main(int argc, char **argv) {
 
                                       int updateFp_cnt = 0;
                                       for (int i = 0; i < fp_sz; i++) {
-                                          int px = int(round(fp_beam_ptr[i] * 20.0f));
-                                          int py = int(round(fp_beam_ptr[i + fp_sz] * 20.0f));
+                                          int px = int((fp_beam_ptr[i] * map_resolution_scale));
+                                          int py = int((fp_beam_ptr[i + fp_sz] * map_resolution_scale));
                                           // get q from cache map
-                                          float q = global_map(px, py);
+                                          float q = current_global_map(px, py);
 
 //                                          std::cout << "q: " << q << std::endl;
                                           // check q value 1. q = 0, not valid , get default value from global map
@@ -1065,7 +1137,7 @@ int main(int argc, char **argv) {
                                               q = cell_q[int(global_map_cell(px, py))];
 //                                              std::cout << "px: " << px << ", py: " << py << std::endl;
 //                                              std::cout << "update q: " << q <<"," << int(global_map_cell(200, 200))<<std::endl;
-                                              old_global_map(px, py) = q;
+//                                              old_global_map(px, py) = q;
 
                                           }
 //                                          std::cout << "i = " << i <<", q1 = " << q << std::endl;
@@ -1135,15 +1207,15 @@ int main(int argc, char **argv) {
 
                                       for (int i = 0; i < op_sz; i++) {
                                           // get q from cache map
-                                          int px = int(round(op_beam_ptr[i] * 20.0f));
-                                          int py = int(round(op_beam_ptr[i + op_sz] * 20.0f));
+                                          int px = int((op_beam_ptr[i] * map_resolution_scale));
+                                          int py = int((op_beam_ptr[i + op_sz] * map_resolution_scale));
 //                                          int(round( op_beam_ptr[i]* 20.0f));
-                                          float q = global_map(px, py);
+                                          float q = current_global_map(px, py);
 
                                           // check q value 1. q = 0, not valid , get default value from global map
                                           if (q == 0) {
                                               q = cell_q[global_map_cell(px, py)];
-                                              old_global_map(px, py) = q;
+//                                              old_global_map(px, py) = q;
 
                                           }
 
@@ -1205,12 +1277,30 @@ int main(int argc, char **argv) {
 
                                       Partials[it].reset_m_chnage_cell_cnt();
 
-                                      int *cell_change_cnt_ptr = &(Partials[it].m_chnage_cell_cnt[0]);
+//                                      int *cell_change_cnt_ptr = &(Partials[it].m_chnage_cell_cnt[0]);
                                       // there may be too many point
                                       // how to avoid useless computation
 
 #if 1
+
+                                      if (loop_cnt == 0) {
+//                                          old_global_map = global_map;
+                                          loop_cnt++;
+
+                                      } else {
+                                          old_global_map = current_global_map;
+
+                                      }
+                                      current_global_map = global_map;
+
                                       float forward_prob[20 * 20 * 30 * 30];
+                                      int forward_prob_cnt = 0;
+
+                                      // 0.5 - 1.0 --> 0 - 100
+                                      std::vector<int> forward_prob_lut(50, 0);
+                                      int *forward_prob_lut_ptr = &(Partials[it].m_chnage_cell_cnt[0]);
+
+                                      float forward_prob_lut_scale = 100.0;
 
                                       for (auto it1 = global_map.begin1(); it1 != global_map.end1(); it1++) {
                                           for (auto it2 = it1.begin(); it2 != it1.end(); it2++) {
@@ -1237,52 +1327,71 @@ int main(int argc, char **argv) {
                                                       // count ++
                                                       if (*it2 <= 0.5) {
                                                           // 0-0
-                                                          cell_change_cnt_ptr[0]++;
+//                                                          cell_change_cnt_ptr[0]++;
+//                                                          forward_prob_lut_ptr[int(forward_prob_lut_scale * (fabs(0.5 - old_q)))] += 1;
+
                                                       } else {
                                                           // 0-1
-                                                          cell_change_cnt_ptr[1]++;
+//                                                          cell_change_cnt_ptr[1]++;
+                                                          forward_prob_lut_ptr[int(
+                                                                  forward_prob_lut_scale * (fabs(0.5 - old_q)))] += 1;
 
                                                       }
                                                   } else {
                                                       // count ++
                                                       if (*it2 <= 0.5) {
                                                           // 1-0
-                                                          cell_change_cnt_ptr[3]++;
+//                                                          cell_change_cnt_ptr[3]++;
+                                                          forward_prob_lut_ptr[int(
+                                                                  forward_prob_lut_scale * (fabs(0.5 - old_q)))] += 1;
 
                                                       } else {
                                                           // 1-1
-                                                          cell_change_cnt_ptr[2]++;
+//                                                          cell_change_cnt_ptr[2]++;
+                                                          forward_prob_lut_ptr[int(
+                                                                  forward_prob_lut_scale * (fabs(0.5 - old_q)))] += 1;
 
                                                       }
                                                   }
 
                                               } else if (1 == cell_type) {
+
+
                                                   *it2 = (1 - old_q) * occuA01 + old_q * occuA11;
                                                   if (old_global_map(it2.index1(), it2.index2()) <= 0.5) {
                                                       // count ++
                                                       if (*it2 <= 0.5) {
                                                           // 0-0
-                                                          cell_change_cnt_ptr[4]++;
+//                                                          cell_change_cnt_ptr[4]++;
+                                                          forward_prob_lut_ptr[int(
+                                                                  forward_prob_lut_scale * (fabs(0.5 - old_q)))] += 1;
 
                                                       } else {
                                                           // 0-1
-                                                          cell_change_cnt_ptr[5]++;
+//                                                          cell_change_cnt_ptr[5]++;
+                                                          forward_prob_lut_ptr[int(
+                                                                  forward_prob_lut_scale * (fabs(0.5 - old_q)))] += 1;
 
                                                       }
                                                   } else {
                                                       // count ++
                                                       if (*it2 <= 0.5) {
                                                           // 1-0
-                                                          cell_change_cnt_ptr[7]++;
+//                                                          cell_change_cnt_ptr[7]++;
 
+                                                          forward_prob_lut_ptr[int(
+                                                                  forward_prob_lut_scale * (fabs(0.5 - old_q)))] += 1;
                                                       } else {
                                                           // 1-1
-                                                          cell_change_cnt_ptr[6]++;
+//                                                          cell_change_cnt_ptr[6]++;
+                                                          forward_prob_lut_ptr[int(
+                                                                  forward_prob_lut_scale * (fabs(0.5 - old_q)))] += 1;
 
                                                       }
                                                   }
 
                                               } else if (2 == cell_type) {
+
                                                   *it2 = (1 - old_q) * dynaA01 + old_q * dynaA11;
 //                                                  std::cout << "~ "<< *it2 << std::endl;
 
@@ -1290,22 +1399,30 @@ int main(int argc, char **argv) {
                                                       // count ++
                                                       if (*it2 <= 0.5) {
                                                           // 0-0
-                                                          cell_change_cnt_ptr[8]++;
+//                                                          cell_change_cnt_ptr[8]++;
+                                                          forward_prob_lut_ptr[int(
+                                                                  forward_prob_lut_scale * (fabs(0.5 - old_q)))] += 1;
 
                                                       } else {
                                                           // 0-1
-                                                          cell_change_cnt_ptr[9]++;
+//                                                          cell_change_cnt_ptr[9]++;
+                                                          forward_prob_lut_ptr[int(
+                                                                  forward_prob_lut_scale * (fabs(0.5 - old_q)))] += 1;
 
                                                       }
                                                   } else {
                                                       // count ++
                                                       if (*it2 < 0.5) {
                                                           // 1-0
-                                                          cell_change_cnt_ptr[11]++;
+//                                                          cell_change_cnt_ptr[11]++;
+                                                          forward_prob_lut_ptr[int(
+                                                                  forward_prob_lut_scale * (fabs(0.5 - old_q)))] += 1;
 
                                                       } else {
-                                                          cell_change_cnt_ptr[10]++;
+//                                                          cell_change_cnt_ptr[10]++;
                                                           // 1-1
+                                                          forward_prob_lut_ptr[int(
+                                                                  forward_prob_lut_scale * (fabs(0.5 - old_q)))] += 1;
 
                                                       }
                                                   }
@@ -1346,9 +1463,13 @@ int main(int argc, char **argv) {
 
 
 #endif
-
+                                              forward_prob_cnt++;
 
                                           }
+                                      }
+                                      //================ end loop through map
+                                      for (int i = 0; i < forward_prob_cnt; i++) {
+
                                       }
 
 #if 0
@@ -1370,6 +1491,7 @@ int main(int argc, char **argv) {
 
             std::cout << "loop done  time: " << t1.elapsedSeconds() << std::endl;
 ////////
+
 
 
 /////////
@@ -1395,7 +1517,7 @@ int main(int argc, char **argv) {
             std::cout << "\n====check cnt";
             for (int i = 0; i < Partials.size(); i++) {
 
-                for (int j = 0; j < 12; j++) {
+                for (int j = 0; j < 50; j++) {
                     if (min_change_cnt[j] > Partials[i].m_chnage_cell_cnt[j]) {
                         min_change_cnt[j] = Partials[i].m_chnage_cell_cnt[j];
                     }
@@ -1411,7 +1533,7 @@ int main(int argc, char **argv) {
 
             for (int i = 0; i < Partials.size(); i++) {
 
-                for (int j = 0; j < 12; j++) {
+                for (int j = 0; j < 50; j++) {
                     Partials[i].m_chnage_cell_cnt[j] -= min_change_cnt[j];
                 }
 
@@ -1422,11 +1544,11 @@ int main(int argc, char **argv) {
 
 
                 mp_util::mp_float &partail_weight = Partials[i].map_weight;
-                partail_weight = 1.0;
-                for (int j = 0; j < 12; j++) {
+//                partail_weight = 1.0;
+                for (int j = 0; j < 50; j++) {
                     auto exp = Partials[i].m_chnage_cell_cnt[j];
                     if (exp != 0) {
-                        auto p = mp_util::mp_pow(change_prob[j], exp);
+                        auto p = mp_util::mp_pow(0.5 + 0.01 * j, exp);
                         partail_weight.prod_mpf(p);
                     }
 //                    std::cout << Partials[i].m_chnage_cell_cnt[j]<< ",";
@@ -1447,7 +1569,7 @@ int main(int argc, char **argv) {
                 partail_weight.print();
                 std::cout << ",m_chnage_cell_cnt: ";
 
-                for (int j = 0; j < 12; j++) {
+                for (int j = 0; j < 50; j++) {
                     std::cout << Partials[i].m_chnage_cell_cnt[j] << ", ";
                 }
                 std::cout << "\n";
@@ -1462,8 +1584,7 @@ int main(int argc, char **argv) {
                     best_id = i;
                 }
             }
-            //todo:bypass
-            best_id = 66;
+
             std::cout << "best id :" << best_id;
             std::cout << "pose:\nx: " << Partials[best_id].map_laser_pose.getX() << " y: "
                       << Partials[best_id].map_laser_pose.getY()
@@ -1471,7 +1592,7 @@ int main(int argc, char **argv) {
 
             std::cout << "best weight: ";
             Partials[best_id].map_weight.print();
-            if (Partials[best_id].map_weight > global_best_weight) {
+            if (1 || Partials[best_id].map_weight > global_best_weight) {
                 global_best_weight = Partials[best_id].map_weight;
                 //global_enable_match = true;
                 final_pose.pose.position.x = Partials[best_id].map_laser_pose.getX();
@@ -1541,7 +1662,7 @@ int main(int argc, char **argv) {
             map_pub.publish(m_map);
 
 //            exit(0);
-//            cv::waitKey(1);
+            cv::waitKey(1);
 
         }
 
@@ -1839,10 +1960,12 @@ int main(int argc, char **argv) {
 
 #if 1
                                           xs_ptr_i[j] = std::clip(
-                                                  int(round((op_beam_x + js_ptr[j] * op_beam_cos) * 20.0f)), int(0),
+                                                  int(round((op_beam_x + js_ptr[j] * op_beam_cos) *
+                                                            map_resolution_scale)), int(0),
                                                   int(mat_dynamic_rows_1));
                                           ys_ptr_i[j] = std::clip(
-                                                  int(round((op_beam_y + js_ptr[j] * op_beam_sin) * 20.0f)), int(0),
+                                                  int(round((op_beam_y + js_ptr[j] * op_beam_sin) *
+                                                            map_resolution_scale)), int(0),
                                                   int(mat_dynamic_cols_1));
 
 #endif
